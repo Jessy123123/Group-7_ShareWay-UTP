@@ -1,0 +1,20 @@
+event_name,type,first_day,last_day,is_holiday
+Thaipusam,public_holiday,2026-01-31,2026-02-02,1
+Chinese New Year,public_holiday,2026-02-14,2026-02-22,1
+Nuzul Al-Quran,public_holiday,2026-03-06,2026-03-08,1
+Hari Raya Aidilfitri,public_holiday,2026-03-18,2026-03-23,1
+Jan 2026 Sem Break,sem_break,2026-04-22,2026-05-10,0
+Hari Raya Aidiladha and Wesak,public_holiday,2026-05-23,2026-06-02,1
+May 2026 Sem Break,sem_break,2026-08-19,2026-09-06,0
+Sultan Perak Birthday and Deepavali,public_holiday,2026-11-06,2026-11-09,1
+Sept 2026 Sem Break,sem_break,2026-12-16,2027-01-03,0
+Thaipusam,public_holiday,2027-01-22,2027-01-24,1
+Chinese New Year,public_holiday,2027-02-03,2027-02-10,1
+Hari Raya Aidilfitri,public_holiday,2027-03-06,2027-03-14,1
+Jan 2027 Sem Break,sem_break,2027-04-22,2027-05-09,0
+Hari Raya Aidiladha and Wesak,public_holiday,2027-05-14,2027-05-23,1
+Awal Muharram and Agong Birthday,public_holiday,2027-06-05,2027-06-08,1
+May 2027 Sem Break,sem_break,2027-08-20,2027-09-05,0
+Deepavali,public_holiday,2027-10-23,2027-10-31,1
+Sultan Perak Birthday,public_holiday,2027-11-05,2027-11-07,1
+Sept 2027 Sem Break,sem_break,2027-12-16,2028-01-09,0
