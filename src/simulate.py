@@ -13,7 +13,6 @@ Run from the repo root:
     python src/simulate.py
 """
 
-import config as C
 import sys
 from pathlib import Path
 
@@ -22,6 +21,7 @@ import pandas as pd
 
 # so "import config" works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+import config as C  # noqa: E402
 
 
 def expected_riders(route, is_holiday, rng):
