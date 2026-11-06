@@ -34,15 +34,15 @@ config.py ──► simulate.py ──► data/simulated/bookings.csv
                                            app.py (Streamlit)
 ```
 
-| Step | File | What it does |
-|---|---|---|
-| 0 | `analyze_survey.py` | Turns survey responses into the `# SURVEY` values in `config.py` |
-| 1 | `simulate.py` | Generates past booking data for every break, route and departure day |
-| 2 | `train.py` | Regression model: bookings so far → final passengers |
-| 3 | `decide.py` | Vehicle rules based on predicted demand |
-| 4 | `carpool.py` | Matches passengers with student drivers (time difference, then detour) |
-| — | `emissions.py` | Distances, CO₂ and cost saved |
-| — | `app.py` | Dashboard for operators and students |
+| Step | File                | What it does                                                           |
+| ---- | ------------------- | ---------------------------------------------------------------------- |
+| 0    | `analyze_survey.py` | Turns survey responses into the `# SURVEY` values in `config.py`       |
+| 1    | `simulate.py`       | Generates past booking data for every break, route and departure day   |
+| 2    | `train.py`          | Regression model: bookings so far → final passengers                   |
+| 3    | `decide.py`         | Vehicle rules based on predicted demand                                |
+| 4    | `carpool.py`        | Matches passengers with student drivers (time difference, then detour) |
+| —    | `emissions.py`      | Distances, CO₂ and cost saved                                          |
+| —    | `app.py`            | Dashboard for operators and students                                   |
 
 ---
 
