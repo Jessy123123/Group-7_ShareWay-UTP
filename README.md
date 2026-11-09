@@ -12,8 +12,6 @@ During semester breaks and public holidays, thousands of UTP students leave camp
 
 Supports SDG 9 (Industry, Innovation & Infrastructure), SDG 11 (Sustainable Cities) and SDG 13 (Climate Action).
 
-> ⚠️ **Prototype only.** Booking history is **simulated** from our student survey. Operator settings (fleet size, thresholds) are **team assumptions**. Outputs are estimates, not guarantees.
-
 ---
 
 ## How it works
@@ -110,7 +108,7 @@ Code to these signatures so everyone can work in parallel:
 ```python
 # train.py      (Jessy)
 predict_final(route, days_before, bookings_so_far, departure_date, is_holiday) -> float
-# decide.py     (Ameera)
+# decide.py     (Nadh)
 recommend(demand) -> {"action": "bus|van|cancel", "buses": int, "standby": bool}
 # carpool.py    (Chua)
 match(passengers_df, drivers_df) -> DataFrame    # ranked by time diff, then detour
@@ -118,12 +116,3 @@ match(passengers_df, drivers_df) -> DataFrame    # ranked by time diff, then det
 distance_km(a, b) -> float                        # a, b = (lat, lon)
 co2_saved(passengers, distance_km, vehicle) -> {"kg_co2": float, "rm_saved": float}
 ```
-
----
-
-## Data and ethics
-
-- Survey participation was voluntary, and no names, contact details or exact addresses were collected.
-- Raw survey exports stay in `data/raw/`, which is excluded from Git.
-- All booking history is **simulated** and labelled as such. Operator settings are **assumptions**.
-- Predictions are estimates to support planning, not guaranteed numbers.
