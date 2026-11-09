@@ -142,8 +142,16 @@ def train():
 
 
 @lru_cache(maxsize=1)
-def load_model():
-    return joblib.load(MODEL_FILE)
+def load_breaks():
+    return pd.read_csv(C.BREAKS_FILE, parse_dates=["first_day"])
+
+
+def departure_offset(departure_date, is_holiday):
+    """Days from the first day of the nearest break (-1 = the day before it)."""
+    breaks = load_breaks()
+    breaks = breaks[breaks["is_holiday"] == int(is_holiday)]
+    days = (pd.Timestamp(departure_date) - breaks["first_day"]).dt.days
+    return int(days.loc[days.abs().idxmin()])
 
 
 def predict_final(route, days_before, bookings_so_far, departure_date, is_holiday):
@@ -154,6 +162,7 @@ def predict_final(route, days_before, bookings_so_far, departure_date, is_holida
         "bookings_so_far": bookings_so_far,
         "day_of_week": pd.Timestamp(departure_date).dayofweek,
         "is_holiday": int(is_holiday),
+        "departure_offset": departure_offset(departure_date, is_holiday),
     }])
     return max(0.0, float(load_model().predict(row[C.FEATURES])[0]))
 

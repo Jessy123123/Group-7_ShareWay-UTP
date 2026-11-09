@@ -97,6 +97,7 @@ MAX_DETOUR_KM = 30  # ASSUMPTION
 
 # Model
 FEATURES = ["route", "days_before",  # FIXED
-            "bookings_so_far", "day_of_week", "is_holiday"]
+            "bookings_so_far", "day_of_week", "is_holiday", "departure_offset"]
+
 TARGET = "final_passengers"  # FIXED
 TEST_SIZE = 0.20  # FIXED

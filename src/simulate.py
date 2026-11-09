@@ -82,6 +82,7 @@ def simulate():
                             "bookings_so_far": int((book_days >= d).sum()),
                             "day_of_week": dow,
                             "is_holiday": is_holiday,
+                            "departure_offset": int(offset),
                             "final_passengers": int(final),
                         })
                     trip_id += 1
