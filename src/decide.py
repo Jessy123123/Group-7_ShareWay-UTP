@@ -27,7 +27,7 @@ def recommend(demand):
     standby = last_bus_load >= STANDBY_FRACTION * BUS_CAPACITY  # check if the last bus is full enough to require a standby bus
     return {"action": "bus", "buses": buses, "standby": standby}
 
-#Test Runs: Run from repo root to see test results. 
+#Test Runs using mock data: Run from repo root to see test results. 
 #python src/decide.py
 
 if __name__ == "__main__":
