@@ -1,0 +1,101 @@
+student_id,role,destination,empty_seats,willingness_to_share,data_type
+UTP00001,Passenger,Ipoh,0,Yes,simulated
+UTP00002,Passenger,Alor Setar,0,Yes,simulated
+UTP00003,Passenger,Kota Bharu,0,No,simulated
+UTP00004,Passenger,Alor Setar,0,Yes,simulated
+UTP00005,Driver,Johor Bahru,2,No,simulated
+UTP00006,Driver,Kota Bharu,3,No,simulated
+UTP00007,Driver,Kota Bharu,3,No,simulated
+UTP00008,Passenger,Penang,0,Yes,simulated
+UTP00009,Passenger,Kota Bharu,0,Yes,simulated
+UTP00010,Passenger,Alor Setar,0,Yes,simulated
+UTP00011,Driver,Kota Bharu,2,Yes,simulated
+UTP00012,Passenger,Penang,0,No,simulated
+UTP00013,Passenger,Penang,0,No,simulated
+UTP00014,Driver,Johor Bahru,2,Yes,simulated
+UTP00015,Driver,Alor Setar,3,Yes,simulated
+UTP00016,Driver,Kuala Lumpur,3,Yes,simulated
+UTP00017,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00018,Passenger,Kota Bharu,0,No,simulated
+UTP00019,Passenger,Johor Bahru,0,Yes,simulated
+UTP00020,Passenger,Ipoh,0,Yes,simulated
+UTP00021,Passenger,Kota Bharu,0,Yes,simulated
+UTP00022,Driver,Johor Bahru,2,Yes,simulated
+UTP00023,Passenger,Alor Setar,0,Yes,simulated
+UTP00024,Passenger,Alor Setar,0,Yes,simulated
+UTP00025,Passenger,Alor Setar,0,Yes,simulated
+UTP00026,Passenger,Alor Setar,0,Yes,simulated
+UTP00027,Driver,Alor Setar,1,Yes,simulated
+UTP00028,Passenger,Johor Bahru,0,Yes,simulated
+UTP00029,Passenger,Johor Bahru,0,Yes,simulated
+UTP00030,Driver,Penang,4,Yes,simulated
+UTP00031,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00032,Driver,Alor Setar,2,No,simulated
+UTP00033,Driver,Ipoh,2,Yes,simulated
+UTP00034,Passenger,Johor Bahru,0,No,simulated
+UTP00035,Passenger,Ipoh,0,Yes,simulated
+UTP00036,Passenger,Ipoh,0,Yes,simulated
+UTP00037,Passenger,Ipoh,0,Yes,simulated
+UTP00038,Driver,Penang,3,Yes,simulated
+UTP00039,Passenger,Johor Bahru,0,No,simulated
+UTP00040,Passenger,Ipoh,0,Yes,simulated
+UTP00041,Driver,Alor Setar,3,Yes,simulated
+UTP00042,Passenger,Kota Bharu,0,Yes,simulated
+UTP00043,Driver,Ipoh,3,Yes,simulated
+UTP00044,Passenger,Penang,0,Yes,simulated
+UTP00045,Passenger,Johor Bahru,0,No,simulated
+UTP00046,Passenger,Penang,0,Yes,simulated
+UTP00047,Passenger,Ipoh,0,Yes,simulated
+UTP00048,Passenger,Johor Bahru,0,No,simulated
+UTP00049,Passenger,Kota Bharu,0,Yes,simulated
+UTP00050,Driver,Ipoh,2,No,simulated
+UTP00051,Passenger,Penang,0,Yes,simulated
+UTP00052,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00053,Passenger,Alor Setar,0,Yes,simulated
+UTP00054,Passenger,Penang,0,No,simulated
+UTP00055,Passenger,Johor Bahru,0,Yes,simulated
+UTP00056,Passenger,Ipoh,0,Yes,simulated
+UTP00057,Driver,Alor Setar,2,Yes,simulated
+UTP00058,Driver,Ipoh,3,Yes,simulated
+UTP00059,Driver,Johor Bahru,2,Yes,simulated
+UTP00060,Passenger,Ipoh,0,Yes,simulated
+UTP00061,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00062,Passenger,Alor Setar,0,Yes,simulated
+UTP00063,Passenger,Alor Setar,0,No,simulated
+UTP00064,Passenger,Johor Bahru,0,Yes,simulated
+UTP00065,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00066,Passenger,Penang,0,Yes,simulated
+UTP00067,Driver,Ipoh,1,Yes,simulated
+UTP00068,Passenger,Kota Bharu,0,Yes,simulated
+UTP00069,Driver,Ipoh,4,Yes,simulated
+UTP00070,Passenger,Ipoh,0,Yes,simulated
+UTP00071,Passenger,Penang,0,Yes,simulated
+UTP00072,Driver,Ipoh,2,Yes,simulated
+UTP00073,Driver,Kuala Lumpur,2,Yes,simulated
+UTP00074,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00075,Passenger,Alor Setar,0,Yes,simulated
+UTP00076,Passenger,Johor Bahru,0,Yes,simulated
+UTP00077,Passenger,Kota Bharu,0,Yes,simulated
+UTP00078,Driver,Ipoh,4,Yes,simulated
+UTP00079,Passenger,Ipoh,0,Yes,simulated
+UTP00080,Driver,Penang,4,Yes,simulated
+UTP00081,Passenger,Johor Bahru,0,Yes,simulated
+UTP00082,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00083,Passenger,Kota Bharu,0,Yes,simulated
+UTP00084,Driver,Alor Setar,2,Yes,simulated
+UTP00085,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00086,Passenger,Johor Bahru,0,No,simulated
+UTP00087,Passenger,Alor Setar,0,Yes,simulated
+UTP00088,Passenger,Penang,0,Yes,simulated
+UTP00089,Passenger,Penang,0,Yes,simulated
+UTP00090,Passenger,Ipoh,0,Yes,simulated
+UTP00091,Driver,Johor Bahru,3,Yes,simulated
+UTP00092,Passenger,Kota Bharu,0,Yes,simulated
+UTP00093,Passenger,Alor Setar,0,No,simulated
+UTP00094,Passenger,Kuala Lumpur,0,Yes,simulated
+UTP00095,Passenger,Johor Bahru,0,No,simulated
+UTP00096,Passenger,Johor Bahru,0,Yes,simulated
+UTP00097,Passenger,Penang,0,Yes,simulated
+UTP00098,Passenger,Ipoh,0,Yes,simulated
+UTP00099,Driver,Ipoh,1,Yes,simulated
+UTP00100,Driver,Alor Setar,2,Yes,simulated
