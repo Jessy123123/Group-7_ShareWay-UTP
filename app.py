@@ -9,15 +9,18 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-# so import config works
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+# app.py lives in the repo root and the modules live in src/,
+# so put both on the path ("import config" and "from train import ..." work)
+ROOT = Path(__file__).resolve().parent
+sys.path.append(str(ROOT))
+sys.path.append(str(ROOT / "src"))
 
 from train import predict_final
 from decide import recommend
 from carpool import match
 from emissions import distance_km, co2_saved
 
-BOOKINGS_CSV = Path(__file__).resolve().parent / "data" / "simulated" / "bookings.csv"
+BOOKINGS_CSV = ROOT / "data" / "simulated" / "bookings.csv"
 
 st.set_page_config(page_title="ShareWay UTP", page_icon="🚍", layout="wide")
 st.title("ShareWay UTP")
@@ -97,11 +100,11 @@ if view == "Operator":
 else:
     st.header("Student Dashboard")
 
-    """ Alternative: Load data from CSV (simulated data) (if we have one)
-    passengers_df = pd.read_csv("data/simulated/passengers.csv", parse_dates=["departure_time"])
-    drivers_df = pd.read_csv("data/simulated/drivers.csv", parse_dates=["departure_time"])
-    drivers_df["willing"] = drivers_df["willing"].astype(bool)
-    """
+    # Alternative: load data from CSV (simulated data) once we have one.
+    # (Kept as comments: Streamlit "magic" prints a bare string literal on the page.)
+    # passengers_df = pd.read_csv("data/simulated/passengers.csv", parse_dates=["departure_time"])
+    # drivers_df = pd.read_csv("data/simulated/drivers.csv", parse_dates=["departure_time"])
+    # drivers_df["willing"] = drivers_df["willing"].astype(bool)
     #LOADED USING MOCK DATA FOR PASSENGERS AND DRIVERS
     passengers_df = pd.DataFrame({
         "passenger_id": ["P1", "P2", "P3", "P4"],
@@ -129,17 +132,22 @@ else:
             st.warning("No carpool matches found.")
         else:
             st.success(f"{len(matches)} passenger(s) matched.")
-            st.dataframe(matches, use_container_width=True)
+            st.dataframe(matches, width="stretch")
             unmatched = set(passengers_df["passenger_id"]) - set(matches["passenger_id"])
             if unmatched:
                 st.caption(f"Not matched: {', '.join(sorted(unmatched))}")
 
     st.subheader("CO2 Emissions and Cost Saved")
-    n = st.number_input("Passengers", 1,5,3)
-    dist = st.number_input("Distance (km)", 1.0, 1000.0, 120.0)
-    vehicle = st.selectbox("Vehicle Type", ["Bus", "Van", "Car"])
-    saved = co2_saved(n, dist, vehicle)
-    a,b = st.columns(2)
+    # emissions.co2_saved() expects lowercase "bus" / "van" / "carpool"
+    vehicle = st.selectbox("Vehicle Type", ["bus", "van", "carpool"],
+                           format_func=str.capitalize)
+    max_n = 4 if vehicle == "carpool" else 200   # carpool: driver + at most 4 riders
+    n = st.number_input("Passengers", 1, max_n, min(3, max_n))
+    dist = st.number_input("Straight-line distance from UTP (km)", 1.0, 1000.0, 120.0)
+    baseline = st.radio("Compared with", ["car", "ehailing"], horizontal=True,
+                        format_func={"car": "Driving alone", "ehailing": "E-hailing"}.get)
+    saved = co2_saved(n, dist, vehicle, baseline)
+    a, b = st.columns(2)
     a.metric("CO2 Emissions Saved (kg)", f"{saved['kg_co2']:.1f}")
-    b.metric("Cost Saved (MYR)", f"{saved['cost_myr']:.2f}")
+    b.metric("Cost Saved (MYR)", f"{saved['rm_saved']:.2f}")
 

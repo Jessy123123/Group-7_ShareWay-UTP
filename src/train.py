@@ -142,6 +142,15 @@ def train():
 
 
 @lru_cache(maxsize=1)
+def load_model():
+    """The model saved by train(). Run `python src/train.py` first if it is missing."""
+    if not MODEL_FILE.exists():
+        raise FileNotFoundError(
+            f"No trained model at {MODEL_FILE}. Run `python src/train.py` from the repo root first.")
+    return joblib.load(MODEL_FILE)
+
+
+@lru_cache(maxsize=1)
 def load_breaks():
     return pd.read_csv(C.BREAKS_FILE, parse_dates=["first_day"])
 
