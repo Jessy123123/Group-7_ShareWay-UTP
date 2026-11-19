@@ -111,7 +111,12 @@ python src/export_web.py         # updates the web dashboard's data
 
 ## Web dashboard
 
-`web/` is a static site: Overview (forecast vs actual, trip plan), What-if forecast, Carpool matching (with a map) and CO₂ / cost saved. It runs in the browser, so:
+`web/` is a static site with two views, switched with the **Operator | Student** button at the top:
+
+- **Operator:** Overview (forecast vs actual, trip plan), What-if forecast, Carpool matching (with a map) and CO₂ / cost saved.
+- **Student:** Plan my trip (bus vs carpool vs going alone, with cost, CO₂ and how full the bus is), Carpool (find a ride or offer your seats) and My trips. The other carpool students are SIMULATED, and bookings are only saved in the viewer's browser: it is a demo, nothing is sent anywhere.
+
+It runs in the browser, so:
 
 - Forecasts for simulated trips are the real model's, worked out by `export_web.py`.
 - Forecasts typed in on the What-if page use a smaller copy of the Random Forest (30 trees) so it fits in the browser. Its error is measured and shown on the page.

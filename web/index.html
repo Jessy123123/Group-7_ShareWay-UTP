@@ -17,10 +17,11 @@
 
   <!-- Sidebar -->
   <nav class="sidebar" aria-label="Main">
-    <a class="logo" href="#overview" title="ShareWay UTP">
+    <a class="logo" href="#" id="home-link" title="ShareWay UTP">
       <img src="assets/utp-emblem.png" alt="Universiti Teknologi PETRONAS">
     </a>
-    <button class="nav-item active" data-page="overview" aria-label="Overview" title="Overview">
+    <div class="nav-group" data-view="operator">
+    <button class="nav-item" data-page="overview" aria-label="Overview" title="Overview">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
       <span>Overview</span>
     </button>
@@ -36,6 +37,22 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 20A7 7 0 0 1 4 13c0-6 7-9 16-9 0 9-3 16-9 16Z"/><path d="M4 21c3-5 6-8 10-10"/></svg>
       <span>CO₂</span>
     </button>
+    </div>
+    <div class="nav-group" data-view="student" hidden>
+    <button class="nav-item" data-page="student" aria-label="Plan my trip" title="Plan my trip">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+      <span>Plan trip</span>
+    </button>
+    <button class="nav-item" data-page="student-carpool" aria-label="Carpool" title="Carpool">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11 6.8 6.2A2 2 0 0 1 8.7 5h6.6a2 2 0 0 1 1.9 1.2L19 11"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/><circle cx="7.5" cy="14" r=".6"/><circle cx="16.5" cy="14" r=".6"/></svg>
+      <span>Carpool</span>
+    </button>
+    <button class="nav-item" data-page="student-trips" aria-label="My trips" title="My trips">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4Z"/><path d="M14 6v12" stroke-dasharray="2 2"/></svg>
+      <span>My trips</span>
+      <i class="nav-badge" id="trips-badge" hidden></i>
+    </button>
+    </div>
   </nav>
 
   <main class="main">
@@ -45,14 +62,24 @@
         <p id="page-sub" class="muted">Demand forecast and vehicle plan for each break</p>
       </div>
       <div class="topbar-right">
+        <div class="view-switch" role="group" aria-label="Switch view">
+          <button type="button" data-view="operator" aria-pressed="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
+            Operator
+          </button>
+          <button type="button" data-view="student" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9 12 4l10 5-10 5Z"/><path d="M6 11v5c3 2.5 9 2.5 12 0v-5"/></svg>
+            Student
+          </button>
+        </div>
         <img class="brand" src="assets/utp-logo.png" alt="UTP · Universiti Teknologi PETRONAS">
         <span class="pill pill-warn" title="All numbers come from simulated bookings, not real students">Simulated data</span>
         <div class="profile">
           <div class="profile-text">
             <strong>Group 7</strong>
-            <span>Transport planner</span>
+            <span id="profile-role">Transport planner</span>
           </div>
-          <div class="avatar" aria-hidden="true">G7</div>
+          <div class="avatar" id="avatar" aria-hidden="true">G7</div>
         </div>
       </div>
     </header>
@@ -349,6 +376,137 @@
       </div>
     </section>
 
+
+    <!-- STUDENT: PLAN MY TRIP -->
+    <section class="page" id="page-student" hidden>
+      <div class="card hero">
+        <div class="hero-text">
+          <span class="hero-kicker" id="sp-kicker">Next break</span>
+          <h2 id="sp-title">Going home?</h2>
+          <p>Pick where you're going and when. You'll see the university bus, carpools from other students and what each one costs.</p>
+        </div>
+        <svg class="hero-art" viewBox="0 0 120 70" aria-hidden="true">
+          <path class="road" d="M4 64h112"/>
+          <g class="bus">
+            <rect x="18" y="16" width="70" height="36" rx="8"/>
+            <path d="M18 34h70M32 16v18M46 16v18M60 16v18M74 16v18"/>
+            <circle cx="34" cy="54" r="6"/><circle cx="72" cy="54" r="6"/>
+          </g>
+          <g class="pin">
+            <path d="M96 30c0-6 5-10 10-10s10 4 10 10c0 8-10 18-10 18s-10-10-10-18Z"/><circle cx="106" cy="30" r="3.5"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="card trip-form">
+        <label class="field">
+          <span>Break / holiday</span>
+          <select id="sp-event"></select>
+        </label>
+        <label class="field">
+          <span>Going to</span>
+          <select id="sp-town"></select>
+        </label>
+        <label class="field">
+          <span>Leave around</span>
+          <input type="time" id="sp-time" step="1800">
+        </label>
+        <div class="date-row">
+          <span class="form-label">Departure day</span>
+          <div class="date-chips" id="sp-dates" role="radiogroup" aria-label="Departure day"></div>
+        </div>
+      </div>
+
+      <div class="options">
+        <article class="card option" id="opt-bus"></article>
+        <article class="card option" id="opt-carpool"></article>
+        <article class="card option" id="opt-alone"></article>
+      </div>
+
+      <div class="card chart-card" id="sp-demand-card">
+        <div class="card-head">
+          <div>
+            <h2 id="sp-demand-title">How full is the bus?</h2>
+            <span class="muted small" id="sp-demand-sub"></span>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="c-sdemand" aria-label="Bookings for this bus so far and the forecast"></canvas></div>
+        <div class="legend">
+          <span><i class="dot dot-accent"></i>Booked so far</span>
+          <span><i class="dash green"></i>Expected by departure</span>
+          <span><i class="dash"></i>Seats on the planned vehicles</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- STUDENT: CARPOOL -->
+    <section class="page" id="page-student-carpool" hidden>
+      <div class="grid-2 carpool-grid">
+        <div class="card form-card">
+          <div class="card-head"><h2>Your trip</h2></div>
+          <div class="form">
+            <div class="segmented" id="sc-role"></div>
+            <div class="form-row two">
+              <label class="field">
+                <span>Day</span>
+                <select id="sc-date"></select>
+              </label>
+              <label class="field">
+                <span>Going to</span>
+                <select id="sc-town"></select>
+              </label>
+            </div>
+            <div class="form-row two">
+              <label class="field">
+                <span>Leave around</span>
+                <input type="time" id="sc-time" step="1800">
+              </label>
+              <label class="field" id="sc-seats-field">
+                <span>Spare seats</span>
+                <select id="sc-seats">
+                  <option value="1">1 seat</option>
+                  <option value="2">2 seats</option>
+                  <option value="3" selected>3 seats</option>
+                  <option value="4">4 seats</option>
+                </select>
+              </label>
+            </div>
+            <p class="muted small" id="sc-rules"></p>
+          </div>
+        </div>
+        <div class="card map-card">
+          <div class="card-head"><h2>Your route</h2><span class="muted small" id="sc-map-sub"></span></div>
+          <div id="s-map" role="img" aria-label="Map of your route and carpool matches"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="sc-results-title">Drivers going your way</h2>
+            <span class="muted small" id="sc-results-sub"></span>
+          </div>
+        </div>
+        <div class="match-list" id="sc-results"></div>
+      </div>
+    </section>
+
+    <!-- STUDENT: MY TRIPS -->
+    <section class="page" id="page-student-trips" hidden>
+      <div class="kpis three">
+        <div class="card kpi"><span class="kpi-label">Trips booked</span><strong class="kpi-value" id="mt-count">0</strong><span class="kpi-sub" id="mt-count-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label">Money saved</span><strong class="kpi-value good" id="mt-rm">RM 0.00</strong><span class="kpi-sub">compared with driving alone</span></div>
+        <div class="card kpi"><span class="kpi-label">CO₂ saved</span><strong class="kpi-value good" id="mt-kg">0.0 kg</strong><span class="kpi-sub" id="mt-kg-sub">compared with driving alone</span></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Booked trips</h2>
+          <span class="muted small">Saved in this browser only (demo, no real booking)</span>
+        </div>
+        <div id="mt-list" class="trip-list"></div>
+      </div>
+    </section>
+
     <footer class="footer muted small">
       ShareWay UTP · TEB2023 Artificial Intelligence · Group 7 · Demo on simulated data, not real student bookings.
     </footer>
@@ -357,6 +515,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

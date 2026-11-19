@@ -1,41 +1,31 @@
 // ShareWay UTP dashboard. Data: data/dashboard.json (built by src/export_web.py).
 import { createLogic, round, dayOfWeek } from "./logic.js";
+import {
+  $, num, MONTHS, DAYS, COLORS, charts, fmtDate, addDays, option, segmented, areaGradient, hexAlpha,
+  REDUCED, countUp, replay, setChart, axisTitle, setupChartDefaults,
+} from "./ui.js";
+import { setupStudent, renderStudent } from "./student.js";
 
-const $ = (id) => document.getElementById(id);
-const num = new Intl.NumberFormat("en-MY", { maximumFractionDigits: 0 });
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-const css = getComputedStyle(document.documentElement);
-const color = (name) => css.getPropertyValue(name).trim();
-const COLORS = {
-  primary: color("--primary"), accent: color("--accent"), green: color("--green"),
-  amber: color("--amber"), red: color("--red"), grey: color("--grey-bar"),
-  text: color("--text"), text2: color("--text-2"), text3: color("--text-3"), border: color("--border"),
-};
-
+// page id: [title, subtitle, view]
 const PAGES = {
-  overview: ["Dashboard", "Demand forecast and vehicle plan for each break"],
-  forecast: ["What-if forecast", "Type in a trip and see the forecast and the vehicles to book"],
-  carpool: ["Carpool matching", "Students the buses can't serve, paired with student drivers"],
-  emissions: ["CO₂ and cost saved", "A shared trip compared with every student travelling alone"],
+  overview: ["Dashboard", "Demand forecast and vehicle plan for each break", "operator"],
+  forecast: ["What-if forecast", "Type in a trip and see the forecast and the vehicles to book", "operator"],
+  carpool: ["Carpool matching", "Students the buses can't serve, paired with student drivers", "operator"],
+  emissions: ["CO₂ and cost saved", "A shared trip compared with every student travelling alone", "operator"],
+  student: ["Plan my trip home", "University bus, carpool or going alone: compare your options", "student"],
+  "student-carpool": ["Carpool", "Find a ride home, or share your spare seats", "student"],
+  "student-trips": ["My trips", "What you've booked and what you've saved", "student"],
 };
+const HOME = { operator: "overview", student: "student" };
+const ROLE = { operator: "Transport planner", student: "Student" };
+const VIEW_KEY = "shareway.view";
+
+function savedView() {
+  try { return localStorage.getItem(VIEW_KEY) === "student" ? "student" : "operator"; } catch { return "operator"; }
+}
 
 let data;
 let L;
-const charts = {};
-
-// ---------- helpers ----------
-
-function fmtDate(iso, withYear = false) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${MONTHS[m - 1]}${withYear ? ` ${y}` : ""}`;
-}
-
-function addDays(iso, n) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-}
 
 function routeName(code) {
   return `Route ${code} · ${data.config.ROUTES[code].name}`;
@@ -52,107 +42,26 @@ function planTag(rec) {
   return rec.standby ? `${tag} <span class="tag standby">+ standby</span>` : tag;
 }
 
-function option(value, label, selected = false) {
-  const o = document.createElement("option");
-  o.value = value;
-  o.textContent = label;
-  o.selected = selected;
-  return o;
-}
-
-function segmented(el, items, current, onPick) {
-  el.innerHTML = "";
-  for (const [value, label] of items) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = label;
-    b.className = value === current ? "active" : "";
-    b.addEventListener("click", () => {
-      [...el.children].forEach((c) => c.classList.toggle("active", c === b));
-      onPick(value);
-    });
-    el.append(b);
-  }
-}
-
-function areaGradient(hex, alphaTop = 0.22) {
-  return (ctx) => {
-    const { chart } = ctx;
-    if (!chart.chartArea) return "transparent";
-    const g = chart.ctx.createLinearGradient(0, chart.chartArea.top, 0, chart.chartArea.bottom);
-    g.addColorStop(0, hexAlpha(hex, alphaTop));
-    g.addColorStop(1, hexAlpha(hex, 0));
-    return g;
-  };
-}
-
-function hexAlpha(hex, a) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-}
-
-// ---------- animation helpers ----------
-
-const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/** Count a number up (or down) from what the element showed before. */
-function countUp(el, to, format = (v) => num.format(v), ms = 750) {
-  const from = Number(el.dataset.v ?? 0);
-  el.dataset.v = to;
-  cancelAnimationFrame(el._raf);
-  if (REDUCED || from === to) { el.textContent = format(to); return; }
-  const start = performance.now();
-  const step = (now) => {
-    const t = Math.min(1, (now - start) / ms);
-    el.textContent = format(from + (to - from) * (1 - (1 - t) ** 3));
-    if (t < 1) el._raf = requestAnimationFrame(step);
-  };
-  el._raf = requestAnimationFrame(step);
-}
-
-/** Restart a one-shot CSS animation class on an element. */
-function replay(el, cls) {
-  el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
-}
-
-function setChart(key, canvasId, config) {
-  if (charts[key]) charts[key].destroy();
-  charts[key] = new Chart($(canvasId), config);
-  return charts[key];
-}
-
-function axisTitle(text) {
-  return { display: true, text, color: COLORS.text3, font: { size: 11 } };
-}
-
-function setupChartDefaults() {
-  Chart.defaults.font.family = '"Poppins", system-ui, sans-serif';
-  Chart.defaults.font.size = 11;
-  Chart.defaults.color = COLORS.text2;
-  Chart.defaults.maintainAspectRatio = false;
-  Chart.defaults.plugins.legend.display = false;
-  Chart.defaults.plugins.tooltip.backgroundColor = COLORS.text;
-  Chart.defaults.plugins.tooltip.padding = 10;
-  Chart.defaults.plugins.tooltip.cornerRadius = 8;
-  Chart.defaults.plugins.tooltip.titleFont = { weight: "600" };
-  Chart.defaults.plugins.tooltip.boxPadding = 4;
-  Chart.defaults.scale.grid.color = COLORS.border;
-  Chart.defaults.scale.border.display = false;
-  Chart.defaults.elements.line.tension = 0.35;
-  Chart.defaults.animation.duration = REDUCED ? 0 : 650;
-  Chart.defaults.animation.easing = "easeOutQuart";
-}
-
 // ---------- navigation ----------
 
 let currentPage = "overview";
 
 function showPage(page) {
-  if (!PAGES[page]) page = "overview";
+  if (!PAGES[page]) page = HOME[savedView()];
   currentPage = page;
+  const view = PAGES[page][2];
+  try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode: not remembered */ }
+
   for (const p of Object.keys(PAGES)) $(`page-${p}`).hidden = p !== page;
+  document.querySelectorAll(".nav-group").forEach((g) => { g.hidden = g.dataset.view !== view; });
+  document.querySelectorAll(".view-switch button").forEach((b) => {
+    const on = b.dataset.view === view;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", on);
+  });
+  document.body.dataset.view = view;
+  $("profile-role").textContent = ROLE[view];
+  $("avatar").textContent = view === "student" ? "ME" : "G7";
   document.querySelectorAll(".nav-item").forEach((b) => {
     const on = b.dataset.page === page;
     b.classList.toggle("active", on);
@@ -161,6 +70,7 @@ function showPage(page) {
   $("page-title").textContent = PAGES[page][0];
   $("page-sub").textContent = PAGES[page][1];
   if (page === "carpool") renderCarpool();
+  if (view === "student") renderStudent(page);
   window.scrollTo({ top: 0 });
 
   // cards rise in one after another, and the charts draw again
@@ -179,6 +89,12 @@ function showPage(page) {
 function setupNav() {
   document.querySelectorAll(".nav-item").forEach((b) =>
     b.addEventListener("click", () => { location.hash = b.dataset.page; }));
+  document.querySelectorAll(".view-switch button").forEach((b) =>
+    b.addEventListener("click", () => { location.hash = HOME[b.dataset.view]; }));
+  $("home-link").addEventListener("click", (e) => {
+    e.preventDefault();
+    location.hash = HOME[PAGES[currentPage][2]];
+  });
   window.addEventListener("hashchange", () => showPage(location.hash.slice(1)));
 }
 
@@ -875,7 +791,8 @@ async function init() {
   renderForecast();
   renderEmissions();
   renderCarpool();
-  showPage(location.hash.slice(1) || "overview");
+  setupStudent({ data, L, events, towns });
+  showPage(location.hash.slice(1) || HOME[savedView()]);
 }
 
 init();
