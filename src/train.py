@@ -4,10 +4,20 @@ Step 2: train the demand model on the SIMULATED booking data.
 The model learns how bookings seen early relate to the final passengers:
     route, days_before, bookings_so_far, day_of_week, is_holiday -> final_passengers
 
-Three approaches are compared on trips the model has not seen:
-  - Baseline: bookings so far / usual share of bookings made by that day
-  - Linear Regression
-  - Random Forest
+Every approach starts from the same simple forecast (the baseline):
+    bookings so far / usual share of bookings made by that day
+The machine learning models then learn a CORRECTION to the baseline (how much
+the final number tends to be above or below it for this route, day and
+break), instead of the final number itself. A tree model that predicts the
+final number directly can only repeat numbers it saw in training, so it
+mostly ignores bookings that are unusually high or low. Predicting the
+correction keeps the forecast tied to the real bookings.
+
+Approaches compared on trips the model has not seen:
+  - Baseline
+  - Linear Regression  (baseline x learned correction)
+  - Random Forest      (baseline x learned correction)
+  - Gradient Boosting  (baseline x learned correction)
 
 The data is split by trip_id, not by row. Each trip has one row per snapshot,
 all with the same final_passengers, so a row split would leak answers into
@@ -25,18 +35,21 @@ import joblib
 import matplotlib
 matplotlib.use("Agg")  # save charts without opening a window
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.compose import ColumnTransformer  # noqa: E402
-from sklearn.ensemble import RandomForestRegressor  # noqa: E402
+from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor  # noqa: E402
 from sklearn.linear_model import LinearRegression  # noqa: E402
 from sklearn.metrics import mean_absolute_error  # noqa: E402
 from sklearn.model_selection import GroupShuffleSplit  # noqa: E402
 from sklearn.pipeline import Pipeline  # noqa: E402
 from sklearn.preprocessing import OneHotEncoder  # noqa: E402
 
-# so "import config" works
+# so "import config" and "from decide import ..." work
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
+from decide import recommend  # noqa: E402
 
 MODEL_FILE = C.ROOT / "models" / "demand_model.joblib"
 CHART_DIR = C.ROOT / "outputs" / "model"
@@ -59,11 +72,44 @@ def fit_baseline(train):
 
 
 def predict_baseline(shares, df):
-    return df["bookings_so_far"] / df["days_before"].map(shares)
+    """Bookings so far / usual share booked by then. Days between snapshots
+    use a share interpolated between the two nearest snapshots."""
+    shares = shares.sort_index()
+    share = np.interp(df["days_before"], shares.index.astype(float), shares.values)
+    return df["bookings_so_far"] / share
+
+
+# The models learn log((final + 1) / (baseline + 1)). The +1 keeps it defined
+# when there are no bookings yet; the log makes "twice as many" and "half as
+# many" equally big mistakes.
+def to_correction(final, baseline):
+    return np.log((final + 1) / (baseline + 1))
+
+
+def from_correction(correction, baseline):
+    return np.maximum(0.0, (baseline + 1) * np.exp(correction) - 1)
+
+
+# Inputs outside what the simulation covers are moved to the nearest value it
+# does cover, so the model is never asked about situations it has not seen.
+DAYS_RANGE = (min(C.SNAPSHOT_DAYS), max(C.SNAPSHOT_DAYS))
+OFFSET_RANGE = {  # same rule as simulate.py: holidays only use offsets >= -1
+    0: (min(C.DEPARTURE_DAY), max(C.DEPARTURE_DAY)),
+    1: (max(-1, min(C.DEPARTURE_DAY)), max(C.DEPARTURE_DAY)),
+}
+
+
+def clip_inputs(df):
+    df = df.copy()
+    df["days_before"] = df["days_before"].clip(*DAYS_RANGE)
+    for holiday, (lo, hi) in OFFSET_RANGE.items():
+        rows = df["is_holiday"] == holiday
+        df.loc[rows, "departure_offset"] = df.loc[rows, "departure_offset"].clip(lo, hi)
+    return df
 
 
 def make_models():
-    """The two machine learning models. Route is a letter, so it is one-hot encoded."""
+    """The machine learning models. Route is a letter, so it is one-hot encoded."""
     def pipeline(model):
         encode = ColumnTransformer(
             [("route", OneHotEncoder(handle_unknown="ignore"), ["route"])],
@@ -73,19 +119,72 @@ def make_models():
     return {
         "Linear Regression": pipeline(LinearRegression()),
         "Random Forest": pipeline(RandomForestRegressor(
-            n_estimators=100, min_samples_leaf=5, n_jobs=-1,
+            n_estimators=200, min_samples_leaf=5, n_jobs=-1,
+            random_state=C.RANDOM_SEED)),
+        "Gradient Boosting": pipeline(HistGradientBoostingRegressor(
             random_state=C.RANDOM_SEED)),
     }
+
+
+def fit_correction(df):
+    """Baseline shares, the correction each training row needs, and the
+    smallest and largest correction seen at each snapshot."""
+    shares = fit_baseline(df)
+    correction = to_correction(df[C.TARGET], predict_baseline(shares, df))
+    limits = correction.groupby(df["days_before"]).agg(["min", "max"])
+    return {"shares": {int(d): float(v) for d, v in shares.items()},
+            "correction_range": {int(d): [float(r["min"]), float(r["max"])]
+                                 for d, r in limits.iterrows()}}, correction
+
+
+def apply_correction(bundle, df, correction):
+    """Final passengers from a predicted correction. The correction is kept
+    inside the range seen in training for that days_before, so an unusual
+    input (e.g. no bookings at all a day before) cannot give a wild forecast."""
+    days = pd.Series(bundle["correction_range"]).sort_index()
+    lo = np.interp(df["days_before"], days.index.astype(float), [r[0] for r in days])
+    hi = np.interp(df["days_before"], days.index.astype(float), [r[1] for r in days])
+    baseline = predict_baseline(pd.Series(bundle["shares"]), df)
+    return from_correction(np.clip(correction, lo, hi), baseline)
+
+
+def fit_bundle(name, df):
+    """Fit the baseline and one model on df. The result is what gets saved."""
+    bundle, correction = fit_correction(df)
+    model = make_models()[name]
+    model.fit(df[C.FEATURES], correction)
+    return {"name": name, "model": model, **bundle}
+
+
+def predict_rows(bundle, df):
+    """Predicted final passengers for every row of df (needs the FEATURES columns)."""
+    df = clip_inputs(df)
+    return apply_correction(bundle, df, bundle["model"].predict(df[C.FEATURES]))
 
 
 def evaluate(train, test):
     """Predict the test trips with every approach. Returns one column per approach."""
     predictions = pd.DataFrame(index=test.index)
     predictions[BASELINE] = predict_baseline(fit_baseline(train), test)
-    for name, model in make_models().items():
-        model.fit(train[C.FEATURES], train[C.TARGET])
-        predictions[name] = model.predict(test[C.FEATURES])
+    for name in make_models():
+        predictions[name] = predict_rows(fit_bundle(name, train), test)
     return predictions
+
+
+def seats_planned(demand):
+    """Seats the vehicle plan provides for a forecast, standby bus included."""
+    rec = recommend(demand)
+    if rec["action"] == "van":
+        return C.VAN_CAPACITY
+    return (rec["buses"] + rec["standby"]) * C.BUS_CAPACITY
+
+
+def short_trips(test, predictions):
+    """Share of test rows (%) where the plan made from the forecast has fewer
+    seats than the passengers who actually turned up."""
+    return pd.Series({name: 100 * np.mean([seats_planned(p) < y for p, y
+                                           in zip(predictions[name], test[C.TARGET])])
+                      for name in predictions.columns})
 
 
 def mae_by_snapshot(test, predictions):
@@ -130,11 +229,13 @@ def train():
     print(overall.round(1).to_string())
     print("\nAverage error (MAE, passengers) at each days_before:")
     print(by_snapshot.round(1).to_string())
+    print("\nTrips planned with too few seats (%), all snapshots:")
+    print(short_trips(test_df, predictions).round(1).to_string())
     save_chart(by_snapshot)
 
-    # Keep the better machine learning model, retrained on every trip
+    # Keep the best machine learning model, retrained on every trip
     best_name = overall.drop(BASELINE).idxmin()
-    best = make_models()[best_name].fit(df[C.FEATURES], df[C.TARGET])
+    best = fit_bundle(best_name, df)
     MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(best, MODEL_FILE)
     print(f"\nSaved {best_name} to {MODEL_FILE}")
@@ -143,11 +244,16 @@ def train():
 
 @lru_cache(maxsize=1)
 def load_model():
-    """The model saved by train(). Run `python src/train.py` first if it is missing."""
+    """The model saved by train(): a dict with its name, the model and the
+    baseline shares. Run `python src/train.py` first if it is missing."""
     if not MODEL_FILE.exists():
         raise FileNotFoundError(
             f"No trained model at {MODEL_FILE}. Run `python src/train.py` from the repo root first.")
-    return joblib.load(MODEL_FILE)
+    bundle = joblib.load(MODEL_FILE)
+    if not isinstance(bundle, dict):
+        raise RuntimeError(
+            f"{MODEL_FILE} was saved by an older train.py. Run `python src/train.py` again.")
+    return bundle
 
 
 @lru_cache(maxsize=1)
@@ -169,11 +275,11 @@ def predict_final(route, days_before, bookings_so_far, departure_date, is_holida
         "route": route,
         "days_before": days_before,
         "bookings_so_far": bookings_so_far,
-        "day_of_week": pd.Timestamp(departure_date).dayofweek,
+        "day_of_week": pd.Timestamp(departure_date).day_of_week,
         "is_holiday": int(is_holiday),
         "departure_offset": departure_offset(departure_date, is_holiday),
     }])
-    return max(0.0, float(load_model().predict(row[C.FEATURES])[0]))
+    return float(predict_rows(load_model(), row)[0])
 
 
 if __name__ == "__main__":

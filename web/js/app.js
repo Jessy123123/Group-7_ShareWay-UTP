@@ -187,7 +187,7 @@ function renderOverview() {
   $("k-trips-sub").textContent = `${count("bus")} bus · ${count("van")} van · ${count("cancel")} cancelled`;
   countUp($("k-buses"), buses);
   $("k-buses-sub").textContent = `${standby} standby · ${count("van")} van${count("van") === 1 ? "" : "s"}`;
-  countUp($("k-mae"), maeAt("Random Forest", ov.days), (v) => `±${v.toFixed(1)}`);
+  countUp($("k-mae"), maeAt(data.accuracy.best_model, ov.days), (v) => `±${v.toFixed(1)}`);
   $("k-mae-sub").textContent = `passengers per trip, ${ov.days} day${ov.days > 1 ? "s" : ""} out`;
 
   // Trip picker
@@ -446,7 +446,7 @@ function renderForecast() {
 
   const webMae = data.accuracy.overall["Web model (compact)"];
   $("r-note").textContent = `An estimate, not a guarantee: on trips it never saw, this forecast was off by about `
-    + `${round(webMae, 1)} passengers on average. It uses a smaller copy of the trained Random Forest so it can run in the browser.`;
+    + `${round(webMae, 1)} passengers on average. It uses a small Random Forest (a lighter copy of the trained model) so it can run in the browser.`;
 }
 
 function renderAccuracy() {
@@ -454,7 +454,8 @@ function renderAccuracy() {
   const styles = {
     Baseline: { c: COLORS.grey, dash: [] },
     "Linear Regression": { c: COLORS.amber, dash: [] },
-    "Random Forest": { c: COLORS.primary, dash: [] },
+    "Random Forest": { c: COLORS.green, dash: [] },
+    "Gradient Boosting": { c: COLORS.primary, dash: [] },
     "Web model (compact)": { c: COLORS.accent, dash: [5, 4] },
   };
   const names = Object.keys(acc.by_days_before.series);
@@ -470,7 +471,7 @@ function renderAccuracy() {
       labels: acc.by_days_before.days.map((d) => `${d}d`),
       datasets: names.map((n) => ({
         label: n, data: acc.by_days_before.series[n], borderColor: styles[n]?.c ?? COLORS.text2,
-        backgroundColor: styles[n]?.c, borderDash: styles[n]?.dash ?? [], borderWidth: n === "Random Forest" ? 3 : 2,
+        backgroundColor: styles[n]?.c, borderDash: styles[n]?.dash ?? [], borderWidth: n === acc.best_model ? 3 : 2,
         pointRadius: 3, tension: 0,
       })),
     },

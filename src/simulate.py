@@ -63,7 +63,7 @@ def simulate():
                 total = expected_riders(route, is_holiday, rng)
                 for offset, share in zip(ev_offsets, ev_shares):
                     dep_date = br["first_day"] + pd.Timedelta(days=int(offset))
-                    dow = dep_date.dayofweek
+                    dow = dep_date.day_of_week
                     mean = total * share * C.DAY_OF_WEEK_FACTOR[dow]
 
                     n_booked = rng.poisson(mean)

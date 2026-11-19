@@ -119,7 +119,7 @@ python src/export_web.py         # updates the web dashboard's data
 It runs in the browser, so:
 
 - Forecasts for simulated trips are the real model's, worked out by `export_web.py`.
-- Forecasts typed in on the What-if page use a smaller copy of the Random Forest (30 trees) so it fits in the browser. Its error is measured and shown on the page.
+- Forecasts typed in on the What-if page use a small Random Forest (30 trees) that learns the same correction as the trained model, so it fits in the browser. Its error is measured and shown on the page.
 - `js/logic.js` is a JavaScript copy of `recommend()`, `match()` and `co2_saved()`. All the numbers come from `config.py` and `emissions.py` through `dashboard.json`, so **changing a number only needs `python src/export_web.py`**. Changing a *rule* in `decide.py`, `carpool.py` or `emissions.py` also needs the same change in `logic.js`.
 
 Preview it locally (it needs a server; opening `index.html` directly will not load the data):

@@ -51,8 +51,16 @@ def feature_names():
 
 
 def fit_compact(df):
+    """Small Random Forest that learns the same correction to the baseline as
+    train.py's models. Returns a bundle like train.fit_bundle()."""
+    bundle, target = T.fit_correction(df)
     model = RandomForestRegressor(**COMPACT, random_state=C.RANDOM_SEED, n_jobs=-1)
-    return model.fit(encode(df), df[C.TARGET])
+    return {"model": model.fit(encode(df), target), **bundle}
+
+
+def predict_compact(compact, df):
+    df = T.clip_inputs(df)
+    return T.apply_correction(compact, df, compact["model"].predict(encode(df)))
 
 
 def forest_to_json(model):
@@ -74,7 +82,7 @@ def forest_to_json(model):
 def export_trips(df):
     """One entry per trip, snapshots ordered from earliest to latest."""
     df = df.copy()
-    df["predicted"] = np.maximum(0.0, T.load_model().predict(df[C.FEATURES]))
+    df["predicted"] = T.predict_rows(T.load_model(), df)
     trips = []
     for trip_id, g in df.sort_values("days_before", ascending=False).groupby("trip_id", sort=True):
         first = g.iloc[0]
@@ -99,12 +107,14 @@ def model_accuracy(df):
     """MAE on unseen trips, same split as train.py, plus the compact web model."""
     train_df, test_df = T.split_by_trip(df)
     predictions = T.evaluate(train_df, test_df)
-    predictions["Web model (compact)"] = fit_compact(train_df).predict(encode(test_df))
+    predictions["Web model (compact)"] = predict_compact(fit_compact(train_df), test_df)
     overall = {name: round(mean_absolute_error(test_df[C.TARGET], predictions[name]), 2)
                for name in predictions.columns}
     by_snapshot = T.mae_by_snapshot(test_df, predictions).round(2)
     return {
+        "best_model": T.load_model()["name"],
         "overall": overall,
+        "short_trips_pct": T.short_trips(test_df, predictions).round(1).to_dict(),
         "by_days_before": {
             "days": [int(d) for d in by_snapshot.index],
             "series": {name: by_snapshot[name].tolist() for name in by_snapshot.columns},
@@ -146,7 +156,13 @@ def export():
         "web_model": {
             "features": feature_names(),
             "params": COMPACT,
-            "trees": forest_to_json(compact),
+            # The trees predict log((final + 1) / (baseline + 1)), see train.py
+            "baseline_shares": {d: round(v, 6) for d, v in compact["shares"].items()},
+            "correction_range": {d: [round(lo, 4), round(hi, 4)]
+                                 for d, (lo, hi) in compact["correction_range"].items()},
+            "days_range": list(T.DAYS_RANGE),
+            "offset_range": {str(h): list(r) for h, r in T.OFFSET_RANGE.items()},
+            "trees": forest_to_json(compact["model"]),
         },
         "trips": export_trips(df),
     }

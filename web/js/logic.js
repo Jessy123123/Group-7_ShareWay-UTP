@@ -64,20 +64,42 @@ export function createLogic(data) {
     return tree.v[node];
   }
 
+  /** numpy.interp over {day: value}: linear between days, flat outside them. */
+  function interp(byDay, day, pick = (v) => v) {
+    const pts = Object.entries(byDay).map(([d, v]) => [Number(d), pick(v)]).sort((a, b) => a[0] - b[0]);
+    if (day <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) {
+      const [d0, v0] = pts[i - 1];
+      const [d1, v1] = pts[i];
+      if (day <= d1) return v0 + ((v1 - v0) * (day - d0)) / (d1 - d0);
+    }
+    return pts[pts.length - 1][1];
+  }
+
+  const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
+
+  // train.py: predict_final(). The trees learn a correction to the baseline:
+  // log((final + 1) / (baseline + 1)), so the forecast follows the bookings.
   function predictFinal(route, daysBefore, bookingsSoFar, dateIso, isHoliday) {
-    const offset = departureOffset(dateIso, isHoliday).days;
+    const W = data.web_model;
+    const holiday = Number(isHoliday);
+    const days = clamp(daysBefore, W.days_range);   // clip_inputs()
+    const offset = clamp(departureOffset(dateIso, isHoliday).days, W.offset_range[holiday]);
     const values = {
-      days_before: daysBefore,
+      days_before: days,
       bookings_so_far: bookingsSoFar,
       day_of_week: dayOfWeek(dateIso),
-      is_holiday: Number(isHoliday),
+      is_holiday: holiday,
       departure_offset: offset,
     };
-    const x = data.web_model.features.map((f) =>
+    const x = W.features.map((f) =>
       f.startsWith("route_") ? Number(f === `route_${route}`) : values[f]);
-    const trees = data.web_model.trees;
-    const mean = trees.reduce((sum, t) => sum + predictTree(t, x), 0) / trees.length;
-    return Math.max(0, mean);
+    // apply_correction(): keep the correction in the range seen in training
+    const raw = W.trees.reduce((sum, t) => sum + predictTree(t, x), 0) / W.trees.length;
+    const correction = clamp(raw, [interp(W.correction_range, days, (r) => r[0]),
+      interp(W.correction_range, days, (r) => r[1])]);
+    const baseline = bookingsSoFar / interp(W.baseline_shares, days);   // predict_baseline()
+    return Math.max(0, (baseline + 1) * Math.exp(correction) - 1);
   }
 
   // emissions.py
