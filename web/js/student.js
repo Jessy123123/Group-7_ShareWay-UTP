@@ -7,7 +7,7 @@
 
 import { round } from "./logic.js";
 import {
-  $, num, MONTHS, DAYS, COLORS, fmtDate, option, segmented, areaGradient,
+  $, num, MONTHS, DAYS, COLORS, charts, fmtDate, option, areaGradient,
   countUp, replay, setChart, axisTitle,
 } from "./ui.js";
 
@@ -201,12 +201,6 @@ function carpoolOption() {
 
 // ---------- Plan my trip ----------
 
-const ICONS = {
-  bus: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 18v2M16 18v2"/><circle cx="8" cy="14.5" r=".8"/><circle cx="16" cy="14.5" r=".8"/></svg>',
-  carpool: '<svg viewBox="0 0 24 24"><path d="M5 11 6.8 6.2A2 2 0 0 1 8.7 5h6.6a2 2 0 0 1 1.9 1.2L19 11"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/></svg>',
-  alone: '<svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.5"/><path d="M5 21c0-4 3-7 7-7s7 3 7 7"/></svg>',
-};
-
 function setupPlan() {
   const today = todayIso();
   const upcoming = [...events.values()].filter((e) => eventDates(e.key).at(-1) >= today);
@@ -225,26 +219,10 @@ function setupPlan() {
 
   fEvent.addEventListener("change", () => { st.eventKey = fEvent.value; pickDefaultDate(); renderPlan(); });
   $("sp-town").addEventListener("change", (e) => { st.town = e.target.value; renderPlan(); });
-  $("sp-time").value = st.time;
+  $("sp-date").addEventListener("change", (e) => { st.date = e.target.value; renderPlan(); });
   $("sp-time").addEventListener("change", (e) => { st.time = e.target.value || "09:00"; renderPlan(); });
 
-  $("sp-dates").addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if (!chip) return;
-    st.date = chip.dataset.date;
-    renderPlan();
-  });
-  $("sp-dates").addEventListener("keydown", (e) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
-    const dates = eventDates(st.eventKey);
-    const i = dates.indexOf(st.date) + (e.key === "ArrowRight" ? 1 : -1);
-    if (i < 0 || i >= dates.length) return;
-    st.date = dates[i];
-    renderPlan();
-    $("sp-dates").querySelector(`[data-date="${st.date}"]`)?.focus();
-  });
-
-  for (const id of ["opt-bus", "opt-carpool", "opt-alone"]) {
+  for (const id of ["opt-bus", "opt-carpool"]) {
     $(id).addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-act]");
       if (btn) act(btn.dataset.act, btn);
@@ -257,140 +235,152 @@ function pickDefaultDate() {
   st.date = dates.find((d) => d >= todayIso()) ?? dates[0];
 }
 
-function renderPlan() {
-  const ev = events.get(st.eventKey);
-  $("sp-kicker").textContent = `${ev.event} · starts ${dayName(ev.firstDay)} ${fmtDate(ev.firstDay, true)}`;
-  $("sp-title").textContent = `Going home to ${st.town}?`;
-  $("sp-town").value = st.town;
+/** Short bus status for a day, shown in the day picker. */
+function dayStatus(route, date) {
+  const trip = route && tripFor(st.eventKey, route, date);
+  if (!trip) return "no bus";
+  const rec = L.recommend(snapshotNow(trip).snap[2]);
+  return rec.action === "cancel" ? "bus may be cancelled" : rec.action === "van" ? "van" : "bus";
+}
 
+function renderPlan() {
+  $("sp-town").value = st.town;
+  $("sp-time").value = st.time;
   const route = routeOf(st.town);
-  $("sp-dates").innerHTML = eventDates(st.eventKey).map((d) => {
-    const trip = route && tripFor(st.eventKey, route, d);
-    const rec = trip ? L.recommend(snapshotNow(trip).snap[2]) : null;
-    const label = !rec ? "No bus" : rec.action === "cancel" ? "May be cancelled" : rec.action === "van" ? "Van" : "Bus";
-    const on = d === st.date;
-    return `<button type="button" class="chip" role="radio" data-date="${d}" aria-checked="${on}" tabindex="${on ? 0 : -1}">
-      <strong>${dayName(d)} ${fmtDate(d)}</strong>
-      <small><i class="${rec ? rec.action : ""}"></i>${label}</small>
-    </button>`;
-  }).join("");
+  const sel = $("sp-date");
+  sel.innerHTML = "";
+  for (const d of eventDates(st.eventKey)) {
+    sel.append(option(d, `${dayName(d)} ${fmtDate(d)} · ${dayStatus(route, d)}`, d === st.date));
+  }
 
   const bus = busOption();
   const car = carpoolOption();
   const alone = L.co2Saved(1, directKm(st.town), "bus", "car");
   const grab = L.co2Saved(1, directKm(st.town), "bus", "ehailing");
 
-  // best value = the cheapest option you can actually take
-  const offers = [bus.available && ["bus", bus.fare], car.available && ["carpool", car.fare]].filter(Boolean);
-  const best = offers.sort((a, b) => a[1] - b[1])[0]?.[0];
+  // KPI tiles
+  const offers = [bus.available && ["University bus", bus.fare, bus.savedKg], car.available && ["Carpool", car.fare, car.savedKg]]
+    .filter(Boolean).sort((a, b) => a[1] - b[1]);
+  const best = offers[0];
+  countUp($("sk-best"), best ? best[1] : alone.solo_rm, rm);
+  $("sk-best-sub").textContent = best ? `${best[0]} · driving alone costs ${rm(alone.solo_rm)}` : "Driving alone (no shared option yet)";
 
-  renderBusCard(bus, best === "bus");
-  renderCarpoolCard(car, best === "carpool");
-  $("opt-alone").innerHTML = `
-    <div class="option-head">
-      <div class="option-icon alone">${ICONS.alone}</div>
-      <div><h3>Going alone</h3><p>For comparison</p></div>
-    </div>
-    <div class="price"><strong>${rm(alone.solo_rm)}</strong><span>driving your own car</span></div>
-    <ul class="facts">
-      <li>E-hailing instead <strong>${rm(grab.solo_rm)}</strong></li>
-      <li>CO₂ from your car <strong>${kg(alone.solo_kg)}</strong></li>
-      <li>Road distance <strong>about ${num.format(directKm(st.town) * data.emissions.ROAD_FACTOR)} km</strong></li>
-    </ul>
-    <div class="spacer"></div>
-    <p class="muted small">Petrol at the BUDI95 price plus tolls. E-hailing uses Grab's base, per-km and per-minute fares.</p>`;
+  if (bus.trip) {
+    $("sk-seats").textContent = bus.capacity ? `${bus.booked}/${bus.capacity}` : `${bus.booked}`;
+    $("sk-seats-sub").textContent = bus.available ? planText(bus.rec) : "Likely to be cancelled";
+  } else {
+    $("sk-seats").textContent = "–";
+    $("sk-seats-sub").textContent = bus.route ? "No bus on this day" : "Not on a bus route";
+  }
+  countUp($("sk-drivers"), car.count);
+  $("sk-drivers-sub").textContent = car.available ? `best leaves ${clock(car.best.driver.minute)}` : `within ${data.config.MAX_TIME_DIFF_HOURS} h of ${st.time}`;
+  const co2 = Math.max(0, ...offers.map((o) => o[2]));
+  countUp($("sk-co2"), co2, kg);
+  $("sk-co2-sub").textContent = "compared with driving alone";
 
-  document.querySelectorAll(".option").forEach((o, i) => { o.style.setProperty("--i", i); replay(o, "pop"); });
+  renderBusCard(bus, best?.[0] === "University bus");
+  renderCarpoolCard(car, best?.[0] === "Carpool");
   renderDemand(bus);
+  renderCost(bus, car, alone, grab);
+}
+
+function planText(rec) {
+  if (rec.action === "van") return "1 van planned";
+  return `${rec.buses} bus${rec.buses > 1 ? "es" : ""} planned${rec.standby ? " + standby" : ""}`;
+}
+
+function kvTable(rows) {
+  return `<div class="table-wrap"><table class="table kv"><tbody>${rows
+    .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function cardHead(title, tag) {
+  return `<div class="card-head"><h2>${title}</h2><span class="tags">${tag ?? ""}</span></div>`;
 }
 
 function renderBusCard(bus, isBest) {
   const el = $("opt-bus");
-  el.classList.toggle("best", isBest);
-  const head = `
-    <div class="option-head">
-      <div class="option-icon bus">${ICONS.bus}</div>
-      <div><h3>University ${bus.vehicle === "van" ? "van" : "bus"}</h3><p>${bus.route ? `Route ${bus.route} · ${data.config.ROUTES[bus.route].name}` : "Route A, B or C"}</p></div>
-    </div>${isBest ? '<span class="ribbon">Best value</span>' : ""}`;
-
+  const title = `University ${bus.vehicle === "van" ? "van" : "bus"}`;
+  const routeText = bus.route ? `Route ${bus.route} · ${data.config.ROUTES[bus.route].name}` : "Not on a route";
   if (!bus.trip) {
-    el.innerHTML = `${head}<div class="status none">${esc(bus.why)}</div><div class="spacer"></div>
-      <button class="btn secondary" data-act="go-carpool">Look for a carpool</button>`;
+    el.innerHTML = cardHead(title, '<span class="tag muted-tag">Not available</span>')
+      + `<div class="empty"><strong>No bus for this trip</strong><span>${esc(bus.why)}</span></div>`
+      + '<div class="card-actions"><button class="btn-ghost" data-act="go-carpool">Look for a carpool</button></div>';
     return;
   }
   if (!bus.available) {
-    el.innerHTML = `${head}
-      <div class="status warn">Likely to be cancelled: only about ${bus.expected} student${bus.expected === 1 ? "" : "s"} expected
-        (under ${data.config.MIN_PASSENGERS}). Students on this trip will be offered carpools.</div>
-      <ul class="facts"><li>Booked so far <strong>${bus.booked}</strong></li></ul>
-      <div class="spacer"></div>
-      <button class="btn secondary" data-act="go-carpool">Find a carpool instead</button>`;
+    el.innerHTML = cardHead(title, '<span class="tag cancel">Likely cancelled</span>')
+      + kvTable([
+        ["Route", routeText],
+        ["Booked so far", bus.booked],
+        ["Expected to travel", `about ${bus.expected}`],
+      ])
+      + `<p class="muted small card-note">Trips with fewer than ${data.config.MIN_PASSENGERS} students are cancelled and the students are offered carpools.</p>`
+      + '<div class="card-actions"><button class="btn-ghost" data-act="go-carpool">Find a carpool instead</button></div>';
     return;
   }
-  const r = bus.rec;
-  const plan = r.action === "van" ? "1 van planned"
-    : `${r.buses} bus${r.buses > 1 ? "es" : ""} planned${r.standby ? " + 1 on standby" : ""}`;
-  const pct = Math.min(100, (100 * bus.booked) / bus.capacity);
   const booked = hasTrip(bus.key);
-  el.innerHTML = `${head}
-    <div class="price"><strong>${rm(bus.fare)}</strong><span>per seat</span></div>
-    <div class="status ${r.action === "van" ? "van" : "ok"}">On track · ${plan}</div>
-    <div class="seatbar">
-      <span>${bus.booked} of ${bus.capacity} seats booked so far</span>
-      <div class="bar"><i style="width:${pct}%"></i></div>
-    </div>
-    <ul class="facts">
-      <li>You save vs driving <strong class="good">${rm(bus.savedRm)}</strong></li>
-      <li>CO₂ saved <strong class="good">${kg(bus.savedKg)}</strong></li>
-    </ul>
-    <div class="spacer"></div>
-    <button class="btn" data-act="book-bus" ${booked ? "disabled" : ""}>${booked ? "Seat booked ✓" : "Book a seat"}</button>`;
+  const pct = Math.min(100, (100 * bus.booked) / bus.capacity);
+  el.innerHTML = cardHead(title, `${isBest ? '<span class="tag van">Best value</span> ' : ""}<span class="tag ${bus.rec.action}">${planText(bus.rec)}</span>`)
+    + kvTable([
+      ["Route", routeText],
+      ["Fare per seat", rm(bus.fare)],
+      ["Seats booked so far", `<span class="bar"><i style="width:${pct}%"></i></span>${bus.booked} of ${bus.capacity}`],
+      ["Expected to travel", `about ${bus.expected}`],
+      ["You save vs driving", `<span class="good">${rm(bus.savedRm)}</span>`],
+      ["CO₂ saved", `<span class="good">${kg(bus.savedKg)}</span>`],
+    ])
+    + `<div class="card-actions"><button class="btn" data-act="book-bus" ${booked ? "disabled" : ""}>${booked ? "Seat booked ✓" : "Book a seat"}</button></div>`;
 }
 
 function renderCarpoolCard(car, isBest) {
   const el = $("opt-carpool");
-  el.classList.toggle("best", isBest);
-  const head = `
-    <div class="option-head">
-      <div class="option-icon carpool">${ICONS.carpool}</div>
-      <div><h3>Carpool</h3><p>With a student driver</p></div>
-    </div>${isBest ? '<span class="ribbon">Best value</span>' : ""}`;
   if (!car.available) {
-    el.innerHTML = `${head}
-      <div class="status none">No driver leaving within ${data.config.MAX_TIME_DIFF_HOURS} h of ${st.time} is going your way yet.</div>
-      <div class="spacer"></div>
-      <button class="btn secondary" data-act="go-carpool">Change time or offer a ride</button>`;
+    el.innerHTML = cardHead("Carpool", '<span class="tag muted-tag">No match yet</span>')
+      + `<div class="empty"><strong>No driver going your way yet</strong><span>Nobody leaves within ${data.config.MAX_TIME_DIFF_HOURS} hours of ${st.time} towards ${esc(st.town)}.</span></div>`
+      + '<div class="card-actions"><button class="btn-ghost" data-act="go-carpool">Change time or offer a ride</button></div>';
     return;
   }
   const b = car.best;
-  const key = `ride|${st.date}|${b.driver.id}`;
-  const requested = hasTrip(key);
-  el.innerHTML = `${head}
-    <div class="price"><strong>${rm(car.fare)}</strong><span>your share of petrol and tolls</span></div>
-    <div class="status van">${car.count} driver${car.count > 1 ? "s" : ""} going your way</div>
-    <ul class="facts">
-      <li>Best match <strong>Driver ${b.driver.id} · leaves ${clock(b.driver.minute)}</strong></li>
-      <li>Driver heading to <strong>${b.driver.town}${b.detour_km > 0 ? ` (+${b.detour_km} km detour)` : ""}</strong></li>
-      <li>You save vs driving <strong class="good">${rm(car.savedRm)}</strong></li>
-      <li>CO₂ saved <strong class="good">${kg(car.savedKg)}</strong></li>
-    </ul>
-    <div class="spacer"></div>
-    <button class="btn green" data-act="request-best" ${requested ? "disabled" : ""}>${requested ? "Seat requested ✓" : "Request this seat"}</button>`;
+  const requested = hasTrip(`ride|${st.date}|${b.driver.id}`);
+  el.innerHTML = cardHead("Carpool", `${isBest ? '<span class="tag van">Best value</span> ' : ""}<span class="tag bus">${car.count} driver${car.count > 1 ? "s" : ""} found</span>`)
+    + kvTable([
+      ["Best match", `Driver ${b.driver.id}`],
+      ["Leaves at", `${clock(b.driver.minute)} (${b.time_diff_hours === 0 ? "same time as you" : `${round(b.time_diff_hours * 60)} min apart`})`],
+      ["Driver going to", `${b.driver.town}${b.detour_km > 0 ? ` · +${b.detour_km} km detour` : ""}`],
+      ["Your share of petrol and tolls", rm(car.fare)],
+      ["You save vs driving", `<span class="good">${rm(car.savedRm)}</span>`],
+      ["CO₂ saved", `<span class="good">${kg(car.savedKg)}</span>`],
+    ])
+    + `<div class="card-actions"><button class="btn-ghost" data-act="go-carpool">See all drivers</button>
+       <button class="btn" data-act="request-best" ${requested ? "disabled" : ""}>${requested ? "Seat requested ✓" : "Request seat"}</button></div>`;
 }
 
 function renderDemand(bus) {
   const card = $("sp-demand-card");
-  card.hidden = !bus.trip;
-  if (!bus.trip) return;
+  let empty = card.querySelector(".empty");
+  if (!empty) {
+    empty = document.createElement("div");
+    empty.className = "empty";
+    card.querySelector(".chart-box").after(empty);
+  }
+  card.querySelector(".chart-box").hidden = !bus.trip;
+  card.querySelector(".legend").hidden = !bus.trip;
+  empty.hidden = Boolean(bus.trip);
+  if (!bus.trip) {
+    $("sp-demand-title").textContent = "How full is the bus?";
+    $("sp-demand-sub").textContent = "";
+    empty.innerHTML = `<strong>No university bus for this trip</strong><span>${esc(bus.why)}</span>`;
+    if (charts.sdemand) { charts.sdemand.destroy(); delete charts.sdemand; }
+    return;
+  }
   const days = data.config.SNAPSHOT_DAYS;
   const snaps = bus.trip.snaps;
   const nowIdx = snaps.findIndex((s) => s[0] === snapshotNow(bus.trip).snap[0]);
   const n = days.length + 1;
   const mine = hasTrip(bus.key) ? 1 : 0;
-  $("sp-demand-title").textContent = `How full is the ${dayName(bus.trip.date)} ${fmtDate(bus.trip.date)} Route ${bus.route} ${bus.vehicle}?`;
-  $("sp-demand-sub").textContent = bus.left > days[0]
-    ? `Bookings have only just opened. About ${bus.expected} students are expected to travel.`
-    : `${bus.left} days to go: ${bus.booked} booked so far, about ${bus.expected} expected to travel. Forecast from the trained model (simulated data).`;
+  $("sp-demand-title").textContent = `How full is the ${dayName(bus.trip.date)} ${fmtDate(bus.trip.date)} ${bus.vehicle}?`;
+  $("sp-demand-sub").textContent = bus.left > days[0] ? "Bookings have just opened" : `${bus.left} days to go`;
 
   setChart("sdemand", "c-sdemand", {
     type: "line",
@@ -407,7 +397,7 @@ function renderDemand(bus) {
           borderColor: COLORS.green, borderDash: [6, 5], borderWidth: 2.5, pointRadius: 0, tension: 0,
         },
         {
-          label: "Seats on the planned vehicles", data: Array.from({ length: n }, () => bus.capacity || null),
+          label: "Seats planned", data: Array.from({ length: n }, () => bus.capacity || null),
           borderColor: COLORS.text, borderDash: [3, 4], borderWidth: 1.5, pointRadius: 0, tension: 0,
         },
       ],
@@ -423,105 +413,121 @@ function renderDemand(bus) {
   });
 }
 
+function renderCost(bus, car, alone, grab) {
+  const rows = [];
+  if (bus.available) rows.push(["University bus", bus.fare, true]);
+  if (car.available) rows.push(["Carpool", car.fare, true]);
+  rows.push(["Driving alone", alone.solo_rm, false], ["E-hailing", grab.solo_rm, false]);
+  $("sp-cost-sub").textContent = `UTP → ${st.town}, about ${num.format(directKm(st.town) * data.emissions.ROAD_FACTOR)} km by road`;
+  setChart("scost", "c-scost", {
+    type: "bar",
+    data: {
+      labels: rows.map((r) => r[0]),
+      datasets: [{
+        data: rows.map((r) => r[1]), backgroundColor: rows.map((r) => (r[2] ? COLORS.accent : COLORS.grey)),
+        borderRadius: 6, maxBarThickness: 26,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      scales: { x: { beginAtZero: true, title: axisTitle("RM per student") }, y: { grid: { display: false }, ticks: { font: { size: 12 } } } },
+      plugins: { tooltip: { callbacks: { label: (i) => ` ${rm(i.raw)}` } } },
+    },
+  });
+}
+
 // ---------- Carpool ----------
 
 let smap;
 let smapLayer;
 
 function setupCarpoolPage() {
-  segmented($("sc-role"), [["rider", "I need a ride"], ["driver", "I can offer a ride"]], st.role, (v) => {
-    st.role = v;
-    renderCarpoolPage();
-  });
+  $("sc-role").addEventListener("change", (e) => { st.role = e.target.value; renderCarpoolPage(); });
   $("sc-date").addEventListener("change", (e) => { st.date = e.target.value; renderCarpoolPage(); });
   $("sc-town").addEventListener("change", (e) => { st.town = e.target.value; renderCarpoolPage(); });
   $("sc-time").addEventListener("change", (e) => { st.time = e.target.value || "09:00"; renderCarpoolPage(); });
   $("sc-seats").addEventListener("change", (e) => { st.seats = Number(e.target.value); renderCarpoolPage(); });
-  $("sc-results").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-act]");
-    if (btn) act(btn.dataset.act, btn);
-  });
-  $("sc-rules").textContent = `Matches follow the same rules as the operator view: leave within ${data.config.MAX_TIME_DIFF_HOURS} hours `
-    + `of each other and add at most ${data.config.MAX_DETOUR_KM} km to the driver's trip. The other students here are simulated.`;
+  for (const id of ["sc-body", "sc-actions"]) {
+    $(id).addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (btn) act(btn.dataset.act, btn);
+    });
+  }
+  $("sc-rules").textContent = `Within ${data.config.MAX_TIME_DIFF_HOURS} h, detour up to ${data.config.MAX_DETOUR_KM} km`;
 }
+
+function setKpi(i, label, value, sub) {
+  $(`ck${i}-label`).textContent = label;
+  $(`ck${i}`).textContent = value;
+  $(`ck${i}-sub`).textContent = sub;
+}
+
+const timeDiff = (h) => (h === 0 ? "same time" : `${round(h * 60)} min`);
 
 function renderCarpoolPage() {
   const sel = $("sc-date");
   sel.innerHTML = "";
   for (const d of eventDates(st.eventKey)) sel.append(option(d, `${dayName(d)} ${fmtDate(d, true)}`, d === st.date));
+  $("sc-role").value = st.role;
   $("sc-town").value = st.town;
   $("sc-time").value = st.time;
   $("sc-seats").value = String(st.seats);
   $("sc-seats-field").hidden = st.role !== "driver";
-  [...$("sc-role").children].forEach((b, i) => b.classList.toggle("active", (i === 0) === (st.role === "rider")));
 
-  const list = $("sc-results");
-  let lines = [];
+  const body = $("sc-body");
+  replay(body, "fresh");
+  let lines;
   if (st.role === "rider") {
     const found = driversForMe();
+    const best = found[0];
+    const cost = best && riderCost(best.detour_km);
+    setKpi(1, "Drivers found", found.length, `on ${dayName(st.date)} ${fmtDate(st.date)}`);
+    setKpi(2, "Best time difference", best ? timeDiff(best.time_diff_hours) : "–", best ? `driver leaves ${clock(best.driver.minute)}` : "no match yet");
+    setKpi(3, "Your share", best ? rm(cost.shared_rm) : "–", "petrol and tolls, best match");
+    setKpi(4, "CO₂ saved", best ? kg(cost.kg_co2) : "–", "compared with driving alone");
+
     $("sc-results-title").textContent = "Drivers going your way";
-    $("sc-results-sub").textContent = found.length
-      ? `${found.length} student driver${found.length > 1 ? "s" : ""} on ${dayName(st.date)} ${fmtDate(st.date)}, best match first`
-      : "";
-    list.innerHTML = found.length ? found.slice(0, 9).map((f, i) => {
-      const cost = riderCost(f.detour_km);
-      const key = `ride|${st.date}|${f.driver.id}`;
-      const done = hasTrip(key);
-      return `<div class="match fresh" style="--i:${i}">
-        <header>
-          <div class="avatar-sm" style="background:${f.driver.color}">${f.driver.id}</div>
-          <div><strong>Driver ${f.driver.id} → ${f.driver.town}</strong><span>Leaves ${clock(f.driver.minute)} · ${f.driver.seats} seat${f.driver.seats > 1 ? "s" : ""} free</span></div>
-          ${i === 0 ? '<span class="tag van top">Best match</span>' : ""}
-        </header>
-        <ul class="facts">
-          <li>Time difference <strong>${f.time_diff_hours === 0 ? "same time" : `${round(f.time_diff_hours * 60)} min`}</strong></li>
-          <li>Detour for the driver <strong>${f.detour_km} km</strong></li>
-          <li>Your share <strong>${rm(cost.shared_rm)}</strong></li>
-          <li>CO₂ saved <strong class="good">${kg(cost.kg_co2)}</strong></li>
-        </ul>
-        <button class="btn green" data-act="request" data-driver="${f.driver.id}" ${done ? "disabled" : ""}>${done ? "Requested ✓" : "Request seat"}</button>
-      </div>`;
-    }).join("") : emptyState("No drivers match yet",
-      `Nobody is driving towards ${st.town} within ${data.config.MAX_TIME_DIFF_HOURS} hours of ${st.time} on this day. Try another time or day.`);
-    lines = found.slice(0, 9).map((f) => ({ town: f.driver.town, color: f.driver.color, label: `Driver ${f.driver.id}` }));
+    $("sc-legend-other").textContent = "Drivers";
+    $("sc-head").innerHTML = '<tr><th>Driver</th><th>Going to</th><th>Leaves</th><th class="num">Your share</th><th></th></tr>';
+    body.innerHTML = found.length ? found.slice(0, 10).map((f) => {
+      const done = hasTrip(`ride|${st.date}|${f.driver.id}`);
+      return `<tr>
+        <td><strong>${f.driver.id}</strong><br><span class="muted small">${f.driver.seats} seat${f.driver.seats > 1 ? "s" : ""} free</span></td>
+        <td>${f.driver.town}<br><span class="muted small">${f.detour_km > 0 ? `+${f.detour_km} km detour` : "no detour"}</span></td>
+        <td>${clock(f.driver.minute)}<br><span class="muted small">${timeDiff(f.time_diff_hours)}${f.time_diff_hours ? " apart" : ""}</span></td>
+        <td class="num">${rm(riderCost(f.detour_km).shared_rm)}</td>
+        <td class="num"><button class="btn-ghost" data-act="request" data-driver="${f.driver.id}" ${done ? "disabled" : ""}>${done ? "Requested" : "Request"}</button></td>
+      </tr>`;
+    }).join("") : emptyRow(5, "No drivers match yet", `Nobody drives towards ${st.town} within ${data.config.MAX_TIME_DIFF_HOURS} hours of ${st.time}. Try another time or day.`);
+    $("sc-actions").innerHTML = "";
+    lines = found.slice(0, 10).map((f) => ({ town: f.driver.town, label: `Driver ${f.driver.id}` }));
   } else {
     const riders = ridersForMe();
     const detour = riders.reduce((s, r) => s + r.detour_km, 0);
     const total = riders.length ? L.co2Saved(riders.length, directKm(st.town), "carpool", "car", detour) : null;
-    const key = `offer|${st.date}|${st.town}|${st.time}`;
-    const done = hasTrip(key);
+    setKpi(1, "Riders matched", riders.length, `on ${dayName(st.date)} ${fmtDate(st.date)}`);
+    setKpi(2, "Seats left", st.seats - riders.length, `of ${st.seats} offered`);
+    setKpi(3, "Riders pay you", total ? rm(total.shared_rm) : "–", "for petrol and tolls");
+    setKpi(4, "CO₂ saved together", total ? kg(total.kg_co2) : "–", "compared with everyone driving");
+
     $("sc-results-title").textContent = "Students you could take";
-    $("sc-results-sub").textContent = riders.length
-      ? `${riders.length} of your ${st.seats} seat${st.seats > 1 ? "s" : ""} filled · riders would pay you ${rm(total.shared_rm)} in total for petrol and tolls`
-      : "";
-    list.innerHTML = riders.length ? riders.map((r, i) => `
-      <div class="match fresh" style="--i:${i}">
-        <header>
-          <div class="avatar-sm" style="background:${r.rider.color}">${r.rider.id}</div>
-          <div><strong>Student ${r.rider.id} → ${r.rider.town}</strong><span>Wants to leave ${clock(r.rider.minute)}</span></div>
-        </header>
-        <ul class="facts">
-          <li>Time difference <strong>${r.time_diff_hours === 0 ? "same time" : `${round(r.time_diff_hours * 60)} min`}</strong></li>
-          <li>Your detour <strong>${r.detour_km} km</strong></li>
-        </ul>
-      </div>`).join("") + `
-      <div class="match offer-card">
-        <ul class="facts">
-          <li>Riders <strong>${riders.length}</strong></li>
-          <li>They pay you <strong>${rm(total.shared_rm)}</strong></li>
-          <li>CO₂ saved together <strong class="good">${kg(total.kg_co2)}</strong></li>
-        </ul>
-        <button class="btn" data-act="offer" ${done ? "disabled" : ""}>${done ? "Ride posted ✓" : "Post my ride"}</button>
-      </div>`
-      : emptyState("No riders match yet",
-        `No student needs a ride towards ${st.town} within ${data.config.MAX_TIME_DIFF_HOURS} hours of ${st.time}. Try another time.`);
-    lines = riders.map((r) => ({ town: r.rider.town, color: r.rider.color, label: `Student ${r.rider.id}` }));
+    $("sc-legend-other").textContent = "Riders";
+    $("sc-head").innerHTML = '<tr><th>Student</th><th>Going to</th><th>Wants to leave</th></tr>';
+    body.innerHTML = riders.length ? riders.map((r) => `<tr>
+        <td><strong>${r.rider.id}</strong></td>
+        <td>${r.rider.town}<br><span class="muted small">${r.detour_km > 0 ? `+${r.detour_km} km detour for you` : "no detour"}</span></td>
+        <td>${clock(r.rider.minute)}<br><span class="muted small">${timeDiff(r.time_diff_hours)}${r.time_diff_hours ? " apart" : ""}</span></td>
+      </tr>`).join("") : emptyRow(3, "No riders match yet", `No student needs a ride towards ${st.town} within ${data.config.MAX_TIME_DIFF_HOURS} hours of ${st.time}.`);
+    const done = hasTrip(`offer|${st.date}|${st.town}|${st.time}`);
+    $("sc-actions").innerHTML = riders.length
+      ? `<button class="btn" data-act="offer" ${done ? "disabled" : ""}>${done ? "Ride posted ✓" : "Post my ride"}</button>` : "";
+    lines = riders.map((r) => ({ town: r.rider.town, label: `Student ${r.rider.id}` }));
   }
   renderStudentMap(lines);
 }
 
-function emptyState(title, text) {
-  return `<div class="empty"><strong>${title}</strong><span>${esc(text)}</span></div>`;
+function emptyRow(cols, title, text) {
+  return `<tr><td colspan="${cols}"><div class="empty"><strong>${title}</strong><span>${esc(text)}</span></div></td></tr>`;
 }
 
 function renderStudentMap(lines) {
@@ -540,21 +546,19 @@ function renderStudentMap(lines) {
   const utp = data.config.UTP;
   const mine = towns[st.town];
   const pts = [utp, mine];
-  const seen = new Set();
-  for (const l of lines) {
-    const p = towns[l.town];
+  const byTown = {};
+  for (const l of lines) (byTown[l.town] ??= []).push(l.label);
+  for (const [town, labels] of Object.entries(byTown)) {
+    const p = towns[town];
     pts.push(p);
     // rider: UTP -> me -> driver's town; driver: UTP -> rider -> me
     const path = st.role === "rider" ? [utp, mine, p] : [utp, p, mine];
-    Lf.polyline(path, { color: l.color, weight: 2.5, opacity: 0.75, className: "route-line" }).addTo(smapLayer);
-    if (!seen.has(l.town)) {
-      seen.add(l.town);
-      Lf.circleMarker(p, { radius: 7, color: "#fff", weight: 2, fillColor: l.color, fillOpacity: 1 })
-        .bindTooltip(`<div class="map-pin"><strong>${l.town}</strong><br>${lines.filter((x) => x.town === l.town).map((x) => x.label).join(", ")}</div>`)
-        .addTo(smapLayer);
-    }
+    Lf.polyline(path, { color: COLORS.primary, weight: 2.5, opacity: 0.8, className: "route-line" }).addTo(smapLayer);
+    Lf.circleMarker(p, { radius: 6 + labels.length, color: "#fff", weight: 2, fillColor: COLORS.green, fillOpacity: 1 })
+      .bindTooltip(`<div class="map-pin"><strong>${town}</strong><br>${labels.join(", ")}</div>`)
+      .addTo(smapLayer);
   }
-  Lf.circleMarker(mine, { radius: 10, color: "#fff", weight: 3, fillColor: COLORS.accent, fillOpacity: 1 })
+  Lf.circleMarker(mine, { radius: 9, color: "#fff", weight: 3, fillColor: COLORS.accent, fillOpacity: 1 })
     .bindTooltip(`<div class="map-pin"><strong>You → ${st.town}</strong></div>`).addTo(smapLayer);
   Lf.circleMarker(utp, { radius: 9, color: "#fff", weight: 3, fillColor: COLORS.primary, fillOpacity: 1 })
     .bindTooltip('<div class="map-pin"><strong>UTP</strong></div>').addTo(smapLayer);
@@ -571,7 +575,7 @@ function act(what, btn) {
     const bus = busOption();
     addTrip({
       key: bus.key, kind: bus.vehicle, date: st.date, time: st.time, town: st.town,
-      title: `University ${bus.vehicle} to ${st.town}`, detail: `Route ${bus.route} · seat booked`,
+      title: `University ${bus.vehicle} to ${st.town}`, detail: `Route ${bus.route}`, status: "Seat booked",
       paid: bus.fare, rm: bus.savedRm, kg: bus.savedKg,
     });
     toast(`Seat booked on the ${dayName(st.date)} ${fmtDate(st.date)} ${bus.vehicle} to ${st.town}`);
@@ -586,7 +590,7 @@ function act(what, btn) {
     const cost = riderCost(f.detour_km);
     addTrip({
       key: `ride|${st.date}|${f.driver.id}`, kind: "carpool", date: st.date, time: clock(f.driver.minute), town: st.town,
-      title: `Carpool to ${st.town}`, detail: `With driver ${f.driver.id} (going to ${f.driver.town}) · requested`,
+      title: `Carpool to ${st.town}`, detail: `Driver ${f.driver.id}`, status: "Requested",
       paid: cost.shared_rm, rm: cost.rm_saved, kg: cost.kg_co2,
     });
     toast(`Seat requested with driver ${f.driver.id}, leaving ${clock(f.driver.minute)}`);
@@ -602,9 +606,9 @@ function act(what, btn) {
     const alone = L.co2Saved(1, directKm(st.town), "bus", "car");
     addTrip({
       key: `offer|${st.date}|${st.town}|${st.time}`, kind: "offer", date: st.date, time: st.time, town: st.town,
-      title: `Driving to ${st.town} with ${riders.length} rider${riders.length > 1 ? "s" : ""}`,
-      detail: `Riders: ${riders.map((r) => r.rider.id).join(", ")}`,
-      // as the driver you get the riders' share back
+      title: `Driving to ${st.town}`, detail: `${riders.length} rider${riders.length > 1 ? "s" : ""}: ${riders.map((r) => r.rider.id).join(", ")}`,
+      status: "Ride posted",
+      // as the driver you pay for the trip and get the riders' share back
       paid: alone.solo_rm - total.shared_rm, rm: total.shared_rm, kg: total.kg_co2,
     });
     toast(`Ride posted: ${riders.length} student${riders.length > 1 ? "s" : ""} can travel with you`);
@@ -614,36 +618,39 @@ function act(what, btn) {
 
 // ---------- My trips ----------
 
+const STATUS_TAG = { "Seat booked": "bus", Requested: "standby", "Ride posted": "van" };
+
 function renderMyTrips() {
   const sorted = [...myTrips].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-  const totalRm = sorted.reduce((s, t) => s + Math.max(0, t.rm), 0);
-  const totalKg = sorted.reduce((s, t) => s + Math.max(0, t.kg), 0);
   countUp($("mt-count"), sorted.length);
   $("mt-count-sub").textContent = sorted.length ? `next: ${dayName(sorted[0].date)} ${fmtDate(sorted[0].date)}` : "nothing booked yet";
-  countUp($("mt-rm"), totalRm, rm);
-  countUp($("mt-kg"), totalKg, kg);
-  $("mt-kg-sub").textContent = "compared with driving alone";
+  countUp($("mt-rm"), sorted.reduce((s, t) => s + Math.max(0, t.rm), 0), rm);
+  countUp($("mt-kg"), sorted.reduce((s, t) => s + Math.max(0, t.kg), 0), kg);
 
-  $("mt-list").innerHTML = sorted.length ? sorted.map((t, i) => {
-    const [, m, d] = t.date.split("-").map(Number);
-    return `<div class="trip" style="animation-delay:${i * 50}ms">
-      <div class="when"><strong>${d}</strong><span>${MONTHS[m - 1]}</span></div>
-      <div>
-        <h3>${esc(t.title)}</h3>
-        <p>${dayName(t.date)} · ${t.kind === "offer" ? "you leave" : "leaves"} ${t.time} · ${esc(t.detail)}</p>
-      </div>
-      <div class="saved"><strong>${t.kind === "offer" ? `+${rm(t.rm)}` : rm(t.paid)}</strong>${t.kind === "offer" ? "back from riders" : `saves ${rm(t.rm)}`}</div>
-      <button class="icon-btn" data-remove="${t.id}" title="Cancel" aria-label="Cancel ${esc(t.title)}">×</button>
-    </div>`;
-  }).join("") : `<div class="empty"><strong>No trips yet</strong><span>Plan your trip home to book a bus seat or a carpool.</span>
-      <button class="btn" data-go="student">Plan my trip</button></div>`;
+  const body = $("mt-body");
+  replay(body, "fresh");
+  body.innerHTML = sorted.length ? sorted.map((t) => {
+    const status = t.status ?? (t.kind === "carpool" ? "Requested" : t.kind === "offer" ? "Ride posted" : "Seat booked");
+    return `<tr>
+      <td>${dayName(t.date)} ${fmtDate(t.date, true)}</td>
+      <td><strong>${esc(t.title)}</strong> <span class="muted small">${esc(t.detail)}</span></td>
+      <td>${t.time}</td>
+      <td><span class="tag ${STATUS_TAG[status] ?? "bus"}">${status}</span></td>
+      <td class="num">${rm(Math.max(0, t.paid))}</td>
+      <td class="num good">${rm(Math.max(0, t.rm))}</td>
+      <td class="num good">${kg(Math.max(0, t.kg))}</td>
+      <td class="num"><button class="icon-btn" data-remove="${t.id}" title="Cancel" aria-label="Cancel ${esc(t.title)}">×</button></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="8"><div class="empty"><strong>No trips yet</strong>
+      <span>Plan your trip home to book a bus seat or a carpool.</span>
+      <button class="btn" data-go="student">Plan my trip</button></div></td></tr>`;
 }
 
 function setupMyTrips() {
-  $("mt-list").addEventListener("click", (e) => {
-    const rm = e.target.closest("[data-remove]");
-    if (rm) {
-      myTrips = myTrips.filter((t) => t.id !== rm.dataset.remove);
+  $("mt-body").addEventListener("click", (e) => {
+    const remove = e.target.closest("[data-remove]");
+    if (remove) {
+      myTrips = myTrips.filter((t) => t.id !== remove.dataset.remove);
       saveTrips();
       renderMyTrips();
       toast("Booking cancelled");

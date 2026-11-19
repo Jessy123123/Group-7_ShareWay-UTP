@@ -379,26 +379,7 @@
 
     <!-- STUDENT: PLAN MY TRIP -->
     <section class="page" id="page-student" hidden>
-      <div class="card hero">
-        <div class="hero-text">
-          <span class="hero-kicker" id="sp-kicker">Next break</span>
-          <h2 id="sp-title">Going home?</h2>
-          <p>Pick where you're going and when. You'll see the university bus, carpools from other students and what each one costs.</p>
-        </div>
-        <svg class="hero-art" viewBox="0 0 120 70" aria-hidden="true">
-          <path class="road" d="M4 64h112"/>
-          <g class="bus">
-            <rect x="18" y="16" width="70" height="36" rx="8"/>
-            <path d="M18 34h70M32 16v18M46 16v18M60 16v18M74 16v18"/>
-            <circle cx="34" cy="54" r="6"/><circle cx="72" cy="54" r="6"/>
-          </g>
-          <g class="pin">
-            <path d="M96 30c0-6 5-10 10-10s10 4 10 10c0 8-10 18-10 18s-10-10-10-18Z"/><circle cx="106" cy="30" r="3.5"/>
-          </g>
-        </svg>
-      </div>
-
-      <div class="card trip-form">
+      <div class="filters card">
         <label class="field">
           <span>Break / holiday</span>
           <select id="sp-event"></select>
@@ -408,86 +389,133 @@
           <select id="sp-town"></select>
         </label>
         <label class="field">
+          <span>Departure day</span>
+          <select id="sp-date"></select>
+        </label>
+        <label class="field">
           <span>Leave around</span>
           <input type="time" id="sp-time" step="1800">
         </label>
-        <div class="date-row">
-          <span class="form-label">Departure day</span>
-          <div class="date-chips" id="sp-dates" role="radiogroup" aria-label="Departure day"></div>
+      </div>
+
+      <div class="kpis">
+        <div class="card kpi">
+          <span class="kpi-label">Cheapest way home</span>
+          <strong class="kpi-value" id="sk-best">–</strong>
+          <span class="kpi-sub" id="sk-best-sub"></span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">Bus seats booked</span>
+          <strong class="kpi-value" id="sk-seats">–</strong>
+          <span class="kpi-sub" id="sk-seats-sub"></span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">Drivers going your way</span>
+          <strong class="kpi-value" id="sk-drivers">–</strong>
+          <span class="kpi-sub" id="sk-drivers-sub"></span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">CO₂ you could save</span>
+          <strong class="kpi-value" id="sk-co2">–</strong>
+          <span class="kpi-sub" id="sk-co2-sub"></span>
         </div>
       </div>
 
-      <div class="options">
-        <article class="card option" id="opt-bus"></article>
-        <article class="card option" id="opt-carpool"></article>
-        <article class="card option" id="opt-alone"></article>
+      <div class="grid-2">
+        <div class="card option-card" id="opt-bus"></div>
+        <div class="card option-card" id="opt-carpool"></div>
       </div>
 
-      <div class="card chart-card" id="sp-demand-card">
-        <div class="card-head">
-          <div>
+      <div class="grid-2">
+        <div class="card chart-card" id="sp-demand-card">
+          <div class="card-head">
             <h2 id="sp-demand-title">How full is the bus?</h2>
             <span class="muted small" id="sp-demand-sub"></span>
           </div>
+          <div class="chart-box"><canvas id="c-sdemand" aria-label="Bookings for this bus so far and the forecast"></canvas></div>
+          <div class="legend">
+            <span><i class="dot dot-accent"></i>Booked so far</span>
+            <span><i class="dash green"></i>Expected by departure</span>
+            <span><i class="dash"></i>Seats planned</span>
+          </div>
         </div>
-        <div class="chart-box"><canvas id="c-sdemand" aria-label="Bookings for this bus so far and the forecast"></canvas></div>
-        <div class="legend">
-          <span><i class="dot dot-accent"></i>Booked so far</span>
-          <span><i class="dash green"></i>Expected by departure</span>
-          <span><i class="dash"></i>Seats on the planned vehicles</span>
+        <div class="card chart-card">
+          <div class="card-head">
+            <h2>What each option costs you</h2>
+            <span class="muted small" id="sp-cost-sub"></span>
+          </div>
+          <div class="chart-box"><canvas id="c-scost" aria-label="Cost of each way home"></canvas></div>
+          <div class="legend">
+            <span><i class="dot dot-accent"></i>Shared</span>
+            <span><i class="dot dot-grey"></i>Alone</span>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- STUDENT: CARPOOL -->
     <section class="page" id="page-student-carpool" hidden>
+      <div class="filters card filters-auto">
+        <label class="field">
+          <span>I am</span>
+          <select id="sc-role">
+            <option value="rider">Looking for a ride</option>
+            <option value="driver">Offering a ride</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Day</span>
+          <select id="sc-date"></select>
+        </label>
+        <label class="field">
+          <span>Going to</span>
+          <select id="sc-town"></select>
+        </label>
+        <label class="field">
+          <span>Leave around</span>
+          <input type="time" id="sc-time" step="1800">
+        </label>
+        <label class="field" id="sc-seats-field">
+          <span>Spare seats</span>
+          <select id="sc-seats">
+            <option value="1">1 seat</option>
+            <option value="2">2 seats</option>
+            <option value="3" selected>3 seats</option>
+            <option value="4">4 seats</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="kpis">
+        <div class="card kpi"><span class="kpi-label" id="ck1-label"></span><strong class="kpi-value" id="ck1">–</strong><span class="kpi-sub" id="ck1-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label" id="ck2-label"></span><strong class="kpi-value" id="ck2">–</strong><span class="kpi-sub" id="ck2-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label" id="ck3-label"></span><strong class="kpi-value" id="ck3">–</strong><span class="kpi-sub" id="ck3-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label" id="ck4-label"></span><strong class="kpi-value" id="ck4">–</strong><span class="kpi-sub" id="ck4-sub"></span></div>
+      </div>
+
       <div class="grid-2 carpool-grid">
-        <div class="card form-card">
-          <div class="card-head"><h2>Your trip</h2></div>
-          <div class="form">
-            <div class="segmented" id="sc-role"></div>
-            <div class="form-row two">
-              <label class="field">
-                <span>Day</span>
-                <select id="sc-date"></select>
-              </label>
-              <label class="field">
-                <span>Going to</span>
-                <select id="sc-town"></select>
-              </label>
-            </div>
-            <div class="form-row two">
-              <label class="field">
-                <span>Leave around</span>
-                <input type="time" id="sc-time" step="1800">
-              </label>
-              <label class="field" id="sc-seats-field">
-                <span>Spare seats</span>
-                <select id="sc-seats">
-                  <option value="1">1 seat</option>
-                  <option value="2">2 seats</option>
-                  <option value="3" selected>3 seats</option>
-                  <option value="4">4 seats</option>
-                </select>
-              </label>
-            </div>
-            <p class="muted small" id="sc-rules"></p>
-          </div>
-        </div>
         <div class="card map-card">
           <div class="card-head"><h2>Your route</h2><span class="muted small" id="sc-map-sub"></span></div>
           <div id="s-map" role="img" aria-label="Map of your route and carpool matches"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <h2 id="sc-results-title">Drivers going your way</h2>
-            <span class="muted small" id="sc-results-sub"></span>
+          <div class="legend">
+            <span><i class="dot dot-primary"></i>UTP</span>
+            <span><i class="dot dot-accent"></i>You</span>
+            <span><i class="dot dot-green"></i><span id="sc-legend-other">Drivers</span></span>
           </div>
         </div>
-        <div class="match-list" id="sc-results"></div>
+        <div class="card">
+          <div class="card-head">
+            <h2 id="sc-results-title">Drivers going your way</h2>
+            <span class="muted small" id="sc-rules"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead id="sc-head"></thead>
+              <tbody id="sc-body"></tbody>
+            </table>
+          </div>
+          <div class="card-actions" id="sc-actions"></div>
+        </div>
       </div>
     </section>
 
@@ -495,15 +523,20 @@
     <section class="page" id="page-student-trips" hidden>
       <div class="kpis three">
         <div class="card kpi"><span class="kpi-label">Trips booked</span><strong class="kpi-value" id="mt-count">0</strong><span class="kpi-sub" id="mt-count-sub"></span></div>
-        <div class="card kpi"><span class="kpi-label">Money saved</span><strong class="kpi-value good" id="mt-rm">RM 0.00</strong><span class="kpi-sub">compared with driving alone</span></div>
-        <div class="card kpi"><span class="kpi-label">CO₂ saved</span><strong class="kpi-value good" id="mt-kg">0.0 kg</strong><span class="kpi-sub" id="mt-kg-sub">compared with driving alone</span></div>
+        <div class="card kpi"><span class="kpi-label">Money saved</span><strong class="kpi-value" id="mt-rm">RM 0.00</strong><span class="kpi-sub">compared with driving alone</span></div>
+        <div class="card kpi"><span class="kpi-label">CO₂ saved</span><strong class="kpi-value" id="mt-kg">0.0 kg</strong><span class="kpi-sub">compared with driving alone</span></div>
       </div>
       <div class="card">
         <div class="card-head">
           <h2>Booked trips</h2>
           <span class="muted small">Saved in this browser only (demo, no real booking)</span>
         </div>
-        <div id="mt-list" class="trip-list"></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Departure</th><th>Trip</th><th>Leaves</th><th>Status</th><th class="num">You pay</th><th class="num">You save</th><th class="num">CO₂ saved</th><th></th></tr></thead>
+            <tbody id="mt-body"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
