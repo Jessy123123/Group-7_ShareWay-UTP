@@ -21,7 +21,6 @@ Run from the repo root for a small demo with made-up data:
     python src/carpool.py
 """
 
-import math
 import sys
 from pathlib import Path
 
@@ -31,19 +30,7 @@ import pandas as pd
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 sys.path.append(str(Path(__file__).resolve().parent))
 import config as C  # noqa: E402
-
-try:
-    from emissions import distance_km  # Muqri's version
-except ImportError:
-    # PLACEHOLDER until emissions.py has distance_km(). Remove this block
-    # once Muqri's version is merged.
-    def distance_km(a, b):
-        """Straight-line distance in km between two (lat, lon) points."""
-        lat1, lon1 = map(math.radians, a)
-        lat2, lon2 = map(math.radians, b)
-        h = (math.sin((lat2 - lat1) / 2) ** 2
-             + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2)
-        return 2 * 6371 * math.asin(math.sqrt(h))
+from emissions import distance_km  # noqa: E402
 
 
 def detour_km(passenger_dest, driver_dest):
