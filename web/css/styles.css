@@ -423,6 +423,46 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
 .view-switch button.active { background: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(91, 63, 217, .3); }
 .view-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
+/* ---------- Routes card (overview) ---------- */
+.route-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; }
+#route-map { height: 330px; border-radius: 12px; overflow: hidden; background: var(--surface-2); z-index: 0; }
+#route-map .leaflet-tile-pane { filter: grayscale(.85) brightness(1.06) contrast(.92); }
+.route-list { display: flex; flex-direction: column; gap: 10px; }
+.route-item {
+  --rc: var(--primary);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 11px 14px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color .2s, box-shadow .2s, background .2s, opacity .2s;
+}
+.route-item:hover { border-color: var(--rc); }
+.route-item:focus-visible { outline: 2px solid var(--rc); outline-offset: 2px; }
+.route-item.active { border-color: var(--rc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rc) 18%, transparent); background: color-mix(in srgb, var(--rc) 6%, var(--surface)); }
+.route-item.dim { opacity: .55; }
+.route-item header { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
+.route-item header i { width: 10px; height: 10px; border-radius: 50%; background: var(--rc); flex: none; }
+.route-item header span { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.route-item .stops { font-size: 12.5px; color: var(--text); }
+.route-item .meta { font-size: 11.5px; color: var(--text-3); }
+.route-item.all header i { background: conic-gradient(var(--accent) 0 33%, var(--green) 0 66%, var(--amber) 0); }
+.leaflet-tooltip.stop-label {
+  font-family: "Poppins", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(31, 34, 51, .15);
+  color: var(--text);
+}
+.leaflet-tooltip.stop-label::before { display: none; }
+
 /* ---------- Student pages (same building blocks as the operator view) ---------- */
 .filters-auto { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .option-card { display: flex; flex-direction: column; }
@@ -582,7 +622,7 @@ body.loading .kpi-value, body.loading .big-tile strong {
 @media (max-width: 1180px) {
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid-2, .carpool-grid { grid-template-columns: minmax(0, 1fr); }
+  .grid-2, .carpool-grid, .route-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
   :root { --sidebar: 0px; }

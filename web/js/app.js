@@ -70,6 +70,7 @@ function showPage(page) {
   $("page-title").textContent = PAGES[page][0];
   $("page-sub").textContent = PAGES[page][1];
   if (page === "carpool") renderCarpool();
+  if (page === "overview") renderRouteMap();
   if (view === "student") renderStudent(page);
   window.scrollTo({ top: 0 });
 
@@ -201,6 +202,103 @@ function renderOverview() {
   renderTrip(trips.find((t) => t.id === ov.tripId));
   renderCurve(ev, trips, predTotal, actualTotal);
   renderPlan(trips);
+  renderRoutes(ev);
+}
+
+// ---------- routes card ----------
+
+const ROUTE_COLORS = { A: COLORS.accent, B: COLORS.green, C: COLORS.amber };
+let routeMap;
+let routeLayer;
+
+function setRoute(code) {
+  ov.route = code;
+  ov.tripId = null;
+  $("f-route").value = code;
+  renderOverview();
+}
+
+function routePoints(code) {
+  return [data.config.UTP, ...Object.values(data.config.ROUTES[code].stops)];
+}
+
+function renderRoutes(ev) {
+  // forecast passengers per route for the chosen break, run and snapshot
+  const perRoute = {};
+  for (const t of ev.trips) {
+    if (t.run !== ov.run) continue;
+    const snap = t.snaps.find((s) => s[0] === ov.days);
+    (perRoute[t.route] ??= { pred: 0, trips: 0 });
+    perRoute[t.route].pred += snap[2];
+    perRoute[t.route].trips += 1;
+  }
+
+  const items = Object.entries(data.config.ROUTES).map(([code, r]) => {
+    const stops = Object.keys(r.stops);
+    const km = L.stopKm(code, stops.at(-1)) * data.emissions.ROAD_FACTOR;
+    const f = perRoute[code];
+    const active = ov.route === code;
+    return `<button type="button" class="route-item${active ? " active" : ""}${ov.route !== "all" && !active ? " dim" : ""}"
+        data-route="${code}" style="--rc:${ROUTE_COLORS[code]}" aria-pressed="${active}">
+      <header><i></i>Route ${code} · ${r.name}<span>${f ? `${num.format(f.pred)} passengers · ${f.trips} trips` : "no trips"}</span></header>
+      <div class="stops">UTP → ${stops.join(" → ")}</div>
+      <div class="meta">${r.states.join(", ")} · about ${num.format(km)} km by road to ${stops.at(-1)}</div>
+    </button>`;
+  });
+  const total = Object.values(perRoute).reduce((s, f) => s + f.pred, 0);
+  items.unshift(`<button type="button" class="route-item all${ov.route === "all" ? " active" : ""}" data-route="all" aria-pressed="${ov.route === "all"}">
+      <header><i></i>All routes<span>${num.format(total)} passengers</span></header>
+      <div class="meta">Show every route together</div>
+    </button>`);
+  $("route-list").innerHTML = items.join("");
+  renderRouteMap();
+}
+
+function renderRouteMap() {
+  const Lf = window.L;
+  if (!Lf || $("page-overview").hidden) return;
+  if (!routeMap) {
+    routeMap = Lf.map("route-map", { scrollWheelZoom: false, zoomSnap: 0.25 });
+    Lf.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 12,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(routeMap);
+    routeLayer = Lf.layerGroup().addTo(routeMap);
+  }
+  routeMap.invalidateSize();
+  routeLayer.clearLayers();
+
+  const codes = Object.keys(data.config.ROUTES);
+  // draw the chosen route last so it sits on top
+  const order = [...codes.filter((c) => c !== ov.route), ...codes.filter((c) => c === ov.route)];
+  for (const code of order) {
+    const on = ov.route === "all" || ov.route === code;
+    const color = ROUTE_COLORS[code];
+    const line = Lf.polyline(routePoints(code), {
+      color, weight: on ? 4.5 : 3, opacity: on ? 0.95 : 0.25, className: ov.route === code ? "route-line" : "",
+    }).addTo(routeLayer);
+    line.bindTooltip(`Route ${code} · ${data.config.ROUTES[code].name}`, { sticky: true });
+    line.on("click", () => setRoute(code));
+    for (const [name, point] of Object.entries(data.config.ROUTES[code].stops)) {
+      const m = Lf.circleMarker(point, { radius: on ? 6 : 4, color: "#fff", weight: 2, fillColor: color, fillOpacity: on ? 1 : 0.35 })
+        .addTo(routeLayer);
+      if (on) m.bindTooltip(name, { permanent: true, direction: "right", offset: [6, 0], className: "stop-label" });
+      m.on("click", () => setRoute(code));
+    }
+  }
+  Lf.circleMarker(data.config.UTP, { radius: 9, color: "#fff", weight: 3, fillColor: COLORS.primary, fillOpacity: 1 })
+    .bindTooltip("UTP", { permanent: true, direction: "left", offset: [-8, 0], className: "stop-label" })
+    .addTo(routeLayer);
+
+  const shown = ov.route === "all" ? codes.flatMap(routePoints) : routePoints(ov.route);
+  routeMap.fitBounds(shown, { padding: [28, 28], maxZoom: 8 });
+}
+
+function setupRoutes() {
+  $("route-list").addEventListener("click", (e) => {
+    const item = e.target.closest("[data-route]");
+    if (item) setRoute(item.dataset.route);
+  });
 }
 
 function renderBars(trips) {
@@ -780,6 +878,7 @@ async function init() {
   buildEvents();
   setupNav();
   setupOverview();
+  setupRoutes();
   setupForecast();
   setupCarpool();
   setupEmissions();
