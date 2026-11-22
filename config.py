@@ -51,13 +51,13 @@ Q5_TO_ROUTE = {  # FIXED: survey Q5 answer -> route code
 
 # Vehicles and decision rules
 BUS_CAPACITY = 44  # FIXED: maximum seats on a bus
-VAN_CAPACITY = 10  # ASSUMPTION
+VAN_CAPACITY = 10  # FIXED
 
 STANDBY_FRACTION = 0.90  # ASSUMPTION: last bus this full -> add a standby bus
 MIN_PASSENGERS = 5  # ASSUMPTION: below this -> cancel the trip
 
 # Simulation inputs
-TOTAL_STUDENTS = 7500  # ASSUMPTION
+TOTAL_STUDENTS = 7500  # FIXED
 LEAVE_RATE = 0.78  # SURVEY + ASSUMPTION: Q3 x LEAVE_WEIGHTS in analyze_survey.py
 
 ROUTE_SHARE = {"A": 0.19, "B": 0.63, "C": 0.13, "Other": 0.04}   # SURVEY Q5
