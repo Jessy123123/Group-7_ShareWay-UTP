@@ -11,6 +11,7 @@ import {
   countUp, replay, setChart, axisTitle,
 } from "./ui.js";
 import { db } from "./db.js";
+import { openAuth } from "./auth.js";
 
 let data;
 let L;
@@ -285,11 +286,13 @@ function renderPlan() {
   const grab = L.co2Saved(1, directKm(st.town), "bus", "ehailing");
 
   // KPI tiles
-  const offers = [bus.available && ["University bus", bus.fare, bus.savedKg], car.available && ["Carpool", car.fare, car.savedKg]]
-    .filter(Boolean).sort((a, b) => a[1] - b[1]);
+  // The university bus/van is recommended when it runs; otherwise a carpool.
+  const offers = [bus.available && ["University bus", bus.savedKg], car.available && ["Carpool", car.savedKg]].filter(Boolean);
   const best = offers[0];
-  countUp($("sk-best"), best ? best[1] : alone.solo_rm, rm);
-  $("sk-best-sub").textContent = best ? `${best[0]} · driving alone costs ${rm(alone.solo_rm)}` : "Driving alone (no shared option yet)";
+  $("sk-best").textContent = best ? (best[0] === "Carpool" ? "Carpool" : bus.vehicle === "van" ? "Van" : "Bus") : "Alone";
+  $("sk-best-sub").textContent = best
+    ? (best[0] === "Carpool" ? `with driver ${car.best.driver.id}, your share ${rm(car.fare)}` : `${planText(bus.rec)} on Route ${bus.route}`)
+    : "No shared option yet for this trip";
 
   if (bus.trip) {
     $("sk-seats").textContent = bus.capacity ? `${bus.booked}/${bus.capacity}` : `${bus.booked}`;
@@ -300,7 +303,7 @@ function renderPlan() {
   }
   countUp($("sk-drivers"), car.count);
   $("sk-drivers-sub").textContent = car.available ? `best leaves ${clock(car.best.driver.minute)}` : `within ${data.config.MAX_TIME_DIFF_HOURS} h of ${st.time}`;
-  const co2 = Math.max(0, ...offers.map((o) => o[2]));
+  const co2 = Math.max(0, ...offers.map((o) => o[1]));
   countUp($("sk-co2"), co2, kg);
   $("sk-co2-sub").textContent = "compared with driving alone";
 
@@ -350,15 +353,13 @@ function renderBusCard(bus, isBest) {
   const button = db.enabled && !db.user
     ? '<button class="btn" data-act="sign-in">Sign in to book</button>'
     : `<button class="btn" data-act="book-bus" ${booked ? "disabled" : ""}>${booked ? "Seat booked ✓" : "Book a seat"}</button>`;
-  el.innerHTML = cardHead(title, `${isBest ? '<span class="tag van">Best value</span> ' : ""}<span class="tag ${bus.rec.action}">${planText(bus.rec)}</span>`)
+  el.innerHTML = cardHead(title, `${isBest ? '<span class="tag van">Recommended</span> ' : ""}<span class="tag ${bus.rec.action}">${planText(bus.rec)}</span>`)
     + kvTable([
       ["Route", routeText],
-      ["Fare per seat", rm(bus.fare)],
       ["Seats booked so far", `<span class="bar"><i style="width:${pct}%"></i></span>${bus.booked} of ${bus.capacity}`],
       ["Expected to travel", `about ${bus.expected}`],
       ...(bus.live !== null ? [["Booked on ShareWay (live)", `${bus.live} student${bus.live === 1 ? "" : "s"}`]] : []),
-      ["You save vs driving", `<span class="good">${rm(bus.savedRm)}</span>`],
-      ["CO₂ saved", `<span class="good">${kg(bus.savedKg)}</span>`],
+      ["CO₂ saved vs driving alone", `<span class="good">${kg(bus.savedKg)}</span>`],
     ])
     + `<div class="card-actions">${button}</div>`;
 }
@@ -373,7 +374,7 @@ function renderCarpoolCard(car, isBest) {
   }
   const b = car.best;
   const requested = hasTrip(`ride|${st.date}|${b.driver.id}`);
-  el.innerHTML = cardHead("Carpool", `${isBest ? '<span class="tag van">Best value</span> ' : ""}<span class="tag bus">${car.count} driver${car.count > 1 ? "s" : ""} found</span>`)
+  el.innerHTML = cardHead("Carpool", `${isBest ? '<span class="tag van">Recommended</span> ' : ""}<span class="tag bus">${car.count} driver${car.count > 1 ? "s" : ""} found</span>`)
     + kvTable([
       ["Best match", `Driver ${b.driver.id}`],
       ["Leaves at", `${clock(b.driver.minute)} (${b.time_diff_hours === 0 ? "same time as you" : `${round(b.time_diff_hours * 60)} min apart`})`],
@@ -445,7 +446,6 @@ function renderDemand(bus) {
 
 function renderCost(bus, car, alone, grab) {
   const rows = [];
-  if (bus.available) rows.push(["University bus", bus.fare, true]);
   if (car.available) rows.push(["Carpool", car.fare, true]);
   rows.push(["Driving alone", alone.solo_rm, false], ["E-hailing", grab.solo_rm, false]);
   $("sp-cost-sub").textContent = `UTP → ${st.town}, about ${num.format(directKm(st.town) * data.emissions.ROAD_FACTOR)} km by road`;
@@ -600,11 +600,11 @@ function renderStudentMap(lines) {
 
 async function act(what, btn) {
   if (what === "go-carpool") { location.hash = "student-carpool"; return; }
-  if (what === "sign-in") { location.hash = "student-trips"; return; }
+  if (what === "sign-in") { openAuth("student"); return; }
 
   if (what === "book-bus" && db.enabled) {
     const bus = busOption();
-    if (!db.user) { location.hash = "student-trips"; return; }
+    if (!db.user) { openAuth("student"); return; }
     btn.disabled = true;
     const res = await db.book(bus.route, st.date, st.town);
     toast(res.error ?? `Seat booked on the ${dayName(st.date)} ${fmtDate(st.date)} ${bus.vehicle} to ${st.town}`);
@@ -617,7 +617,7 @@ async function act(what, btn) {
     addTrip({
       key: bus.key, kind: bus.vehicle, date: st.date, time: st.time, town: st.town,
       title: `University ${bus.vehicle} to ${st.town}`, detail: `Route ${bus.route}`, status: "Seat booked",
-      paid: bus.fare, rm: bus.savedRm, kg: bus.savedKg,
+      paid: null, rm: null, kg: bus.savedKg,   // no fare for the university bus/van
     });
     toast(`Seat booked on the ${dayName(st.date)} ${fmtDate(st.date)} ${bus.vehicle} to ${st.town}`);
     renderPlan();
@@ -669,7 +669,7 @@ function liveTrips() {
     return {
       id: `db-${b.id}`, dbId: b.id, kind: n.vehicle, date: b.date, time: "–", town: b.destination,
       title: `University ${n.vehicle} to ${b.destination}`, detail: `Route ${b.route} · saved to your account`,
-      status: "Seat booked", paid: n.fare, rm: n.savedRm, kg: n.savedKg,
+      status: "Seat booked", paid: null, rm: null, kg: n.savedKg,   // no fare for the university bus/van
     };
   });
 }
@@ -681,70 +681,13 @@ function allTrips() {
   return [...myTrips.filter((t) => t.kind === "carpool" || t.kind === "offer"), ...liveTrips()];
 }
 
-function renderAccount() {
-  const el = $("account");
-  if (!db.enabled) {
-    el.innerHTML = `<div class="card-head"><h2>Demo mode</h2><span class="tag muted-tag">No account needed</span></div>
-      <p class="muted small">Bookings are saved in this browser only.${db.error ? ` (Database unavailable: ${esc(db.error)})` : ""}</p>`;
-    $("mt-note").textContent = "Saved in this browser only (demo, no real booking)";
-    return;
-  }
-  $("mt-note").textContent = db.user ? "Bus seats are saved to your account · carpools are still a demo" : "Sign in to save real bus seats";
-  if (db.user) {
-    const p = db.profile ?? {};
-    const name = p.full_name || db.user.email.split("@")[0];
-    el.innerHTML = `<div class="account-row">
-      <div class="avatar">${esc(name.slice(0, 2).toUpperCase())}</div>
-      <div class="who"><strong>${esc(name)}</strong><span>${esc(db.user.email)} · ${p.role === "operator" ? "Operator" : "Student"}</span></div>
-      <button class="btn-ghost" data-account="sign-out">Sign out</button>
-    </div>`;
-    return;
-  }
-  const mode = el.dataset.mode ?? "sign-in";
-  el.innerHTML = `<div class="card-head">
-      <h2>${mode === "sign-in" ? "Sign in to book real seats" : "Create your ShareWay account"}</h2>
-      <div class="tabs" role="tablist">
-        <button class="tab ${mode === "sign-in" ? "active" : ""}" data-account-mode="sign-in" role="tab">Sign in</button>
-        <button class="tab ${mode === "sign-up" ? "active" : ""}" data-account-mode="sign-up" role="tab">Create account</button>
-      </div>
-    </div>
-    <form class="account-form" id="account-form" novalidate>
-      ${mode === "sign-up" ? '<label class="field"><span>Full name</span><input id="acc-name" autocomplete="name" required></label>' : ""}
-      <label class="field"><span>UTP email</span><input id="acc-email" type="email" autocomplete="email" placeholder="name@utp.edu.my" required></label>
-      <label class="field"><span>Password</span><input id="acc-pass" type="password" autocomplete="${mode === "sign-in" ? "current-password" : "new-password"}" minlength="8" required></label>
-      <button class="btn" type="submit">${mode === "sign-in" ? "Sign in" : "Create account"}</button>
-    </form>
-    <p class="account-msg" id="acc-msg" role="status"></p>`;
-}
-
-async function onAccountSubmit(e) {
-  e.preventDefault();
-  const msg = $("acc-msg");
-  const email = $("acc-email").value;
-  const pass = $("acc-pass").value;
-  const name = $("acc-name")?.value ?? "";
-  msg.className = "account-msg";
-  if (!email || !pass || ($("acc-name") && !name.trim())) {
-    msg.className = "account-msg error";
-    msg.textContent = "Fill in every field first.";
-    return;
-  }
-  const submit = e.target.querySelector("button[type=submit]");
-  submit.disabled = true;
-  msg.textContent = "Please wait…";
-  const res = $("acc-name") ? await db.signUp(email, pass, name) : await db.signIn(email, pass);
-  submit.disabled = false;
-  if (!$("acc-msg")) return;   // signed in: the card was redrawn
-  $("acc-msg").className = `account-msg ${res.error ? "error" : "info"}`;
-  $("acc-msg").textContent = res.error ?? res.info ?? "";
-}
-
 function renderMyTrips() {
-  renderAccount();
+  $("mt-note").textContent = !db.enabled ? "Saved in this browser only (demo, no real booking)"
+    : "Bus seats are saved to your account · carpools are still a demo in this browser";
   const sorted = [...allTrips()].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
   countUp($("mt-count"), sorted.length);
   $("mt-count-sub").textContent = sorted.length ? `next: ${dayName(sorted[0].date)} ${fmtDate(sorted[0].date)}` : "nothing booked yet";
-  countUp($("mt-rm"), sorted.reduce((s, t) => s + Math.max(0, t.rm), 0), rm);
+  countUp($("mt-rm"), sorted.reduce((s, t) => s + Math.max(0, t.rm ?? 0), 0), rm);
   countUp($("mt-kg"), sorted.reduce((s, t) => s + Math.max(0, t.kg), 0), kg);
 
   const body = $("mt-body");
@@ -756,8 +699,8 @@ function renderMyTrips() {
       <td><strong>${esc(t.title)}</strong> <span class="muted small">${esc(t.detail)}</span></td>
       <td>${t.time}</td>
       <td><span class="tag ${STATUS_TAG[status] ?? "bus"}">${status}</span></td>
-      <td class="num">${rm(Math.max(0, t.paid))}</td>
-      <td class="num good">${rm(Math.max(0, t.rm))}</td>
+      <td class="num">${t.paid == null ? '<span class="muted" title="No fare for the university bus/van">–</span>' : rm(Math.max(0, t.paid))}</td>
+      <td class="num good">${t.rm == null ? '<span class="muted">–</span>' : rm(Math.max(0, t.rm))}</td>
       <td class="num good">${kg(Math.max(0, t.kg))}</td>
       <td class="num"><button class="icon-btn" data-remove="${t.id}" title="Cancel" aria-label="Cancel ${esc(t.title)}">×</button></td>
     </tr>`;
@@ -767,12 +710,6 @@ function renderMyTrips() {
 }
 
 function setupMyTrips() {
-  $("account").addEventListener("submit", onAccountSubmit);
-  $("account").addEventListener("click", async (e) => {
-    const modeBtn = e.target.closest("[data-account-mode]");
-    if (modeBtn) { $("account").dataset.mode = modeBtn.dataset.accountMode; renderAccount(); return; }
-    if (e.target.closest("[data-account='sign-out']")) { await db.signOut(); toast("Signed out"); }
-  });
   $("mt-body").addEventListener("click", async (e) => {
     const remove = e.target.closest("[data-remove]");
     if (remove && remove.dataset.remove.startsWith("db-")) {

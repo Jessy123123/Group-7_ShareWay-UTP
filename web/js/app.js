@@ -6,6 +6,7 @@ import {
 } from "./ui.js";
 import { setupStudent, renderStudent, refreshStudent } from "./student.js";
 import { db } from "./db.js";
+import { setupAuth, checkGate } from "./auth.js";
 import { setupLive, leaveLive } from "./live.js";
 
 // page id: [title, subtitle, view]
@@ -64,8 +65,8 @@ function showPage(page) {
     b.setAttribute("aria-pressed", on);
   });
   document.body.dataset.view = view;
-  $("profile-role").textContent = ROLE[view];
-  $("avatar").textContent = view === "student" ? "ME" : "G7";
+  updateProfile(view);
+  checkGate(view);   // login pop-up when Supabase is connected
   document.querySelectorAll(".nav-item").forEach((b) => {
     const on = b.dataset.page === page;
     b.classList.toggle("active", on);
@@ -92,6 +93,18 @@ function showPage(page) {
       if (el.contains(ch.canvas)) { ch.reset(); ch.update(); }
     }
   }
+}
+
+/** Top-right name: the signed-in account, or the demo label. */
+function updateProfile(view) {
+  const user = db.enabled ? db.user : null;
+  const name = user ? (db.profile?.full_name || user.email.split("@")[0]) : "Group 7";
+  $("profile-name").textContent = name;
+  $("profile-role").textContent = user ? (db.isOperator ? "Operator" : "Student") : ROLE[view];
+  $("avatar").textContent = user
+    ? name.split(/[\s._]+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    : (view === "student" ? "ME" : "G7");
+  $("sign-out").hidden = !user;
 }
 
 function setupNav() {
@@ -922,10 +935,18 @@ async function init() {
 
   // Real logins and bookings (Supabase). Runs in the background; without a key
   // in js/supabase-config.js the site stays in demo mode.
-  db.onChange(() => renderPlan(selectedTrips()));
+  setupAuth({ onSwitchView: (view) => { location.hash = HOME[view]; } });
+  $("sign-out").addEventListener("click", () => db.signOut());
+  const gate = () => {
+    const view = PAGES[currentPage][2];
+    updateProfile(view);
+    checkGate(view);   // login pop-up when Supabase is connected
+  };
+  db.onChange(() => { renderPlan(selectedTrips()); gate(); });
   db.init().then(() => {
     refreshStudent();
     renderPlan(selectedTrips());
+    gate();
   });
 }
 

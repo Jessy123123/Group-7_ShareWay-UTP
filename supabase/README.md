@@ -25,18 +25,32 @@ for real, and the operator's trip plan shows live seat counts.
    into `SUPABASE_KEY` in `web/js/supabase-config.js`.
    Never use the **secret** / `service_role` key in the website.
 
+## Logins
+
+The website shows a login pop-up when Supabase is connected:
+
+- **Student view**: sign in or create an account with a `@utp.edu.my` email.
+- **Operator view**: only accounts with the operator role get in. Operators can
+  use **any** email (Gmail is fine), but an admin must approve it first.
+
 ## Make someone an operator
 
-Operators can see every booking. After they have signed up on the website, run
-in the SQL Editor:
+New operator (any email): approve the address in the SQL Editor, then they
+choose **Operator → Create account** on the website and get the operator role:
 
 ```sql
-update public.profiles set role = 'operator' where email = 'their.name@utp.edu.my';
+insert into public.operator_emails (email) values ('someone@gmail.com');
+```
+
+Someone who already has an account:
+
+```sql
+update public.profiles set role = 'operator' where email = 'their@email.com';
 ```
 
 ## Rules the database enforces
 
-- Only `@utp.edu.my` emails can sign up.
+- Students sign up with `@utp.edu.my` emails; other emails only if approved as operators.
 - Students only see their own bookings; everyone can see *how many* seats are booked per trip.
 - A student can hold one seat per trip and can only book trips that haven't left yet.
 - Bookings are cancelled, never deleted, so the history stays for retraining.

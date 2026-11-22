@@ -27,7 +27,9 @@ function notify() {
 
 function friendly(err) {
   const msg = err?.message ?? String(err);
-  if (/database error saving new user/i.test(msg)) return `Please use your UTP email (${UTP_DOMAIN}).`;
+  if (/database error saving new user/i.test(msg)) {
+    return `Students must use a UTP email (${UTP_DOMAIN}). Operators: ask the admin to approve your email first.`;
+  }
   if (/invalid login credentials/i.test(msg)) return "Wrong email or password.";
   if (/email not confirmed/i.test(msg)) return "Confirm your email first: check your UTP inbox for the link.";
   if (/rate limit/i.test(msg)) return "Too many emails sent. Wait a while and try again.";
@@ -107,9 +109,11 @@ export const db = {
     counts = new Map(rows.map((r) => [Number(r.trip_id), Number(r.booked)]));
   },
 
-  async signUp(email, password, fullName) {
+  /** Students need a UTP email. Operators can use any email the admin has
+   * approved (operator_emails table); the database checks that. */
+  async signUp(email, password, fullName, asOperator = false) {
     email = email.trim().toLowerCase();
-    if (!email.endsWith(UTP_DOMAIN)) return { error: `Please use your UTP email (${UTP_DOMAIN}).` };
+    if (!asOperator && !email.endsWith(UTP_DOMAIN)) return { error: `Please use your UTP email (${UTP_DOMAIN}).` };
     if (password.length < 8) return { error: "Use a password of at least 8 characters." };
     const { data: res, error: err } = await client.auth.signUp({
       email, password,

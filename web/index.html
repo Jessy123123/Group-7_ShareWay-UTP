@@ -80,10 +80,11 @@
         <span class="pill pill-warn" title="All numbers come from simulated bookings, not real students">Simulated data</span>
         <div class="profile">
           <div class="profile-text">
-            <strong>Group 7</strong>
+            <strong id="profile-name">Group 7</strong>
             <span id="profile-role">Transport planner</span>
           </div>
           <div class="avatar" id="avatar" aria-hidden="true">G7</div>
+          <button type="button" class="btn-ghost sign-out" id="sign-out" hidden>Sign out</button>
         </div>
       </div>
     </header>
@@ -487,7 +488,7 @@
 
       <div class="kpis">
         <div class="card kpi">
-          <span class="kpi-label">Cheapest way home</span>
+          <span class="kpi-label">Recommended way home</span>
           <strong class="kpi-value" id="sk-best">–</strong>
           <span class="kpi-sub" id="sk-best-sub"></span>
         </div>
@@ -528,7 +529,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-head">
-            <h2>What each option costs you</h2>
+            <h2>Carpool vs going alone</h2>
             <span class="muted small" id="sp-cost-sub"></span>
           </div>
           <div class="chart-box"><canvas id="c-scost" aria-label="Cost of each way home"></canvas></div>
@@ -608,7 +609,6 @@
 
     <!-- STUDENT: MY TRIPS -->
     <section class="page" id="page-student-trips" hidden>
-      <div class="card account-card" id="account"></div>
       <div class="kpis three">
         <div class="card kpi"><span class="kpi-label">Trips booked</span><strong class="kpi-value" id="mt-count">0</strong><span class="kpi-sub" id="mt-count-sub"></span></div>
         <div class="card kpi"><span class="kpi-label">Money saved</span><strong class="kpi-value" id="mt-rm">RM 0.00</strong><span class="kpi-sub">compared with driving alone</span></div>
@@ -636,6 +636,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<div class="auth-overlay" id="auth" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="js/app.js"></script>
 </body>
