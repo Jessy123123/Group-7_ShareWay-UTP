@@ -549,7 +549,7 @@ function renderForecast() {
   requestAnimationFrame(() => {
     [...fleet.children].forEach((card, i) => {
       const v = vehicles[i];
-      card.querySelector("header span").textContent = v.kind.includes("standby") ? "if needed" : `${v.load}/${v.cap}`;
+      card.querySelector("header span").textContent = v.kind.includes("standby") ? "spare" :`${v.load}/${v.cap}`;
       card.querySelector(".bar i").style.width = `${(100 * v.load) / v.cap}%`;
     });
   });
