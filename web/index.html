@@ -25,6 +25,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
       <span>Overview</span>
     </button>
+    <button class="nav-item" data-page="live" aria-label="Live bookings" title="Live bookings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></svg>
+      <span>Live</span>
+    </button>
     <button class="nav-item" data-page="forecast" aria-label="What-if forecast" title="What-if forecast">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg>
       <span>Forecast</span>
@@ -195,6 +199,76 @@
               </table>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIVE BOOKINGS -->
+    <section class="page" id="page-live" hidden>
+      <div class="card live-controls">
+        <div class="live-pickers">
+          <label class="field">
+            <span>Break / holiday</span>
+            <select id="lv-event"></select>
+          </label>
+          <div class="segmented" id="lv-route" aria-label="Route"></div>
+          <label class="field">
+            <span>Departure</span>
+            <select id="lv-trip"></select>
+          </label>
+        </div>
+        <div class="live-buttons">
+          <span class="live-dot" id="lv-live" aria-hidden="true"></span>
+          <button type="button" class="btn" id="lv-play" aria-pressed="false">Start</button>
+          <button type="button" class="btn-ghost" id="lv-step">Next day</button>
+          <button type="button" class="btn-ghost" id="lv-restart">Restart</button>
+          <div class="segmented speed" id="lv-speed" aria-label="Speed"></div>
+        </div>
+        <p class="muted small live-note">The full system needs no data entry: students book through ShareWay, and each
+          day the model re-forecasts from the bookings so far and updates the vehicle plan. Here one trip is replayed
+          day by day. Bookings are <strong>SIMULATED</strong> (from the simulated dataset; days between snapshots are
+          interpolated), and the forecast comes from the in-browser model used on the What-if page. A seat you book in
+          the Student view for this trip is counted too.</p>
+      </div>
+
+      <div class="kpis">
+        <div class="card kpi">
+          <span class="kpi-label">Today</span>
+          <strong class="kpi-value" id="lv-today">–</strong>
+          <span class="kpi-sub" id="lv-today-sub"></span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">Bookings so far</span>
+          <strong class="kpi-value" id="lv-book">–</strong>
+          <span class="kpi-sub" id="lv-book-sub"></span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">Forecast final passengers</span>
+          <strong class="kpi-value" id="lv-pred">–</strong>
+          <span class="kpi-sub" id="lv-pred-sub"></span>
+        </div>
+        <div class="card kpi">
+          <span class="kpi-label">Vehicle plan (high end)</span>
+          <strong class="kpi-value" id="lv-plan">–</strong>
+          <span class="kpi-sub" id="lv-plan-sub"></span>
+        </div>
+      </div>
+
+      <div class="grid-2 live-grid">
+        <div class="card chart-card">
+          <div class="card-head"><h2>Forecast as bookings come in</h2></div>
+          <div class="chart-box tall"><canvas id="c-live" aria-label="Bookings, forecast and seats planned for each day before departure"></canvas></div>
+          <div class="legend">
+            <span><i class="dot dot-accent"></i>Bookings so far</span>
+            <span><i class="dot dot-primary"></i>Forecast final</span>
+            <span><i class="dot dot-band"></i>Likely range</span>
+            <span><i class="dot dot-green"></i>Seats planned</span>
+            <span><i class="dash"></i>Actual final</span>
+          </div>
+        </div>
+        <div class="card feed-card">
+          <div class="card-head"><h2>Booking feed</h2><span class="muted small">newest first</span></div>
+          <ol class="feed" id="lv-feed" aria-live="polite"></ol>
         </div>
       </div>
     </section>

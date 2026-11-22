@@ -5,10 +5,12 @@ import {
   REDUCED, countUp, replay, setChart, axisTitle, setupChartDefaults,
 } from "./ui.js";
 import { setupStudent, renderStudent } from "./student.js";
+import { setupLive, leaveLive } from "./live.js";
 
 // page id: [title, subtitle, view]
 const PAGES = {
   overview: ["Dashboard", "Demand forecast and vehicle plan for each break", "operator"],
+  live: ["Live bookings", "Bookings arrive on their own and the forecast and plan update every day", "operator"],
   forecast: ["What-if forecast", "Type in a trip and see the forecast and the vehicles to book", "operator"],
   carpool: ["Carpool matching", "Students the buses can't serve, paired with student drivers", "operator"],
   emissions: ["CO₂ and cost saved", "A shared trip compared with every student travelling alone", "operator"],
@@ -48,6 +50,7 @@ let currentPage = "overview";
 
 function showPage(page) {
   if (!PAGES[page]) page = HOME[savedView()];
+  if (page !== "live") leaveLive();
   currentPage = page;
   const view = PAGES[page][2];
   try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode: not remembered */ }
@@ -908,6 +911,7 @@ async function init() {
   renderEmissions();
   renderCarpool();
   setupStudent({ data, L, events, towns });
+  setupLive({ data, L, events });
   showPage(location.hash.slice(1) || HOME[savedView()]);
 }
 
