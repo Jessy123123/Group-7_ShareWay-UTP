@@ -198,6 +198,8 @@ Ollama must be running (`ollama serve`, or the Ollama app). Pages on `localhost`
 | What-if forecast   | Try any route, date and number of bookings and see the forecast and plan. Also shows how accurate each model is                                                                                  |
 | Carpool matching   | Edit passengers and drivers and see the matches on a map                                                                                                                                         |
 | CO₂ and cost saved | A shared trip compared with every student driving alone or using e-hailing                                                                                                                       |
+| Booking history    | Every real seat booked and cancelled (Supabase): filters, charts by day, route, booking lead time and stop, and a CSV download |
+| Ask AI             | Full-page AI assistant (Ollama) that explains the forecast, range and vehicle plan |
 
 **Student**
 
@@ -206,6 +208,7 @@ Ollama must be running (`ollama serve`, or the Ollama app). Pages on `localhost`
 | Plan my trip | Bus vs carpool vs going alone, with cost, CO₂ and how full the bus is expected to be |
 | Carpool      | Find a ride or offer your spare seats                                                |
 | My trips     | Your bookings and what you've saved                                                  |
+| Ask AI       | Full-page AI assistant (Ollama) for questions about your trip home |
 
 The other carpool students are **SIMULATED**, and bookings are only saved in the viewer's own browser: nothing is sent anywhere. A seat booked in the student view is also counted on the operator's Live bookings page for the same trip.
 

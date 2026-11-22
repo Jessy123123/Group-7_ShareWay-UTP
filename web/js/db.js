@@ -146,6 +146,25 @@ export const db = {
     return {};
   },
 
+  /** Every booking with its trip and student (operators only: the security
+   * rules return just your own bookings to anyone else). Newest first. */
+  async allBookings() {
+    if (!client) return { rows: [] };
+    const { data: rows, error: err } = await client
+      .from("bookings")
+      .select("id, status, destination, created_at, cancelled_at, trips(route, departure_date, event_name), profiles(full_name, email)")
+      .order("created_at", { ascending: false })
+      .limit(5000);
+    if (err) return { rows: [], error: friendly(err) };
+    return {
+      rows: rows.map((r) => ({
+        id: r.id, status: r.status, destination: r.destination, created: r.created_at, cancelled: r.cancelled_at,
+        route: r.trips?.route ?? "?", date: r.trips?.departure_date ?? "", event: r.trips?.event_name ?? "",
+        name: r.profiles?.full_name || "", email: r.profiles?.email ?? "",
+      })),
+    };
+  },
+
   async cancel(bookingId) {
     const { error: err } = await client.from("bookings")
       .update({ status: "cancelled", cancelled_at: new Date().toISOString() })

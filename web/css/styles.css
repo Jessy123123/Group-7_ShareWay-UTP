@@ -659,9 +659,19 @@ body.auth-open .app { filter: blur(3px); pointer-events: none; user-select: none
 .chat-form .btn.stop { background: var(--red); }
 .chat-foot { margin: 0; padding: 0 12px 10px; font-size: 10.5px; color: var(--text-3); text-align: center; }
 body.auth-open .chat-fab, body.auth-open .chat-panel { display: none; }
+.chat-dock { display: flex; }
+.chat-panel.docked {
+  position: static; width: 100%; height: calc(100vh - 170px); min-height: 460px;
+  border-radius: var(--radius); box-shadow: var(--shadow); animation: none;
+}
+.chat-panel.docked .msg { max-width: 72%; font-size: 14px; }
+.chat-panel.docked .chat-log { padding: 22px 26px; }
+.chat-panel.docked .chat-suggest { padding-left: 26px; padding-right: 26px; }
 @media (max-width: 760px) {
   .chat-fab { bottom: 84px; right: 16px; }
   .chat-panel { right: 8px; left: 8px; bottom: 76px; width: auto; height: calc(100vh - 100px); }
+  .chat-panel.docked { height: calc(100vh - 230px); }
+  .chat-panel.docked .msg { max-width: 88%; }
   .toast { bottom: 140px; }
 }
 

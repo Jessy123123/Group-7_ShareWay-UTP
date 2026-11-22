@@ -7,7 +7,8 @@ import {
 import { setupStudent, renderStudent, refreshStudent, studentFacts } from "./student.js";
 import { db } from "./db.js";
 import { setupAuth, checkGate } from "./auth.js";
-import { setupChat, setChatView } from "./chat.js";
+import { setupChat, setChatView, dockChat } from "./chat.js";
+import { setupHistory, renderHistory } from "./history.js";
 import { setupLive, leaveLive } from "./live.js";
 
 // page id: [title, subtitle, view]
@@ -20,6 +21,9 @@ const PAGES = {
   student: ["Plan my trip home", "University bus, carpool or going alone: compare your options", "student"],
   "student-carpool": ["Carpool", "Find a ride home, or share your spare seats", "student"],
   "student-trips": ["My trips", "What you've booked and what you've saved", "student"],
+  "student-assistant": ["AI assistant", "Ask about your trip home: bus, carpool, costs and CO₂", "student"],
+  history: ["Booking history", "Every seat booked and cancelled on ShareWay", "operator"],
+  assistant: ["AI assistant", "Ask about the forecast, the likely range and the vehicle plan", "operator"],
 };
 const HOME = { operator: "overview", student: "student" };
 const ROLE = { operator: "Transport planner", student: "Student" };
@@ -69,6 +73,8 @@ function showPage(page) {
   updateProfile(view);
   checkGate(view);   // login pop-up when Supabase is connected
   setChatView(view);
+  dockChat(page === "assistant" ? $("dock-operator") : page === "student-assistant" ? $("dock-student") : null);
+  if (page === "history") renderHistory();
   document.querySelectorAll(".nav-item").forEach((b) => {
     const on = b.dataset.page === page;
     b.classList.toggle("active", on);
@@ -969,6 +975,7 @@ async function init() {
   renderCarpool();
   setupStudent({ data, L, events, towns });
   setupLive({ data, L, events });
+  setupHistory({ data });
   showPage(location.hash.slice(1) || HOME[savedView()]);
 
   // Real logins and bookings (Supabase). Runs in the background; without a key
@@ -981,7 +988,7 @@ async function init() {
     updateProfile(view);
     checkGate(view);   // login pop-up when Supabase is connected
   };
-  db.onChange(() => { renderPlan(selectedTrips()); gate(); });
+  db.onChange(() => { renderPlan(selectedTrips()); gate(); if (currentPage === "history") renderHistory(); });
   db.init().then(() => {
     refreshStudent();
     renderPlan(selectedTrips());

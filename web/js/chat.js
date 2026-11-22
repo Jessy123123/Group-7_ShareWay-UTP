@@ -200,6 +200,34 @@ function toggle(open) {
   }
 }
 
+let docked = false;
+
+/** Show the chat full-size inside a page (the "Ask AI" pages), or put it back
+ * as the floating panel when `container` is null. Same conversation either way. */
+export function dockChat(container) {
+  const panel = $("chat");
+  const fab = $("chat-fab");
+  if (container) {
+    if (panel.parentElement !== container) container.append(panel);
+    panel.classList.add("docked");
+    panel.hidden = false;
+    docked = true;
+    fab.hidden = true;
+    $("chat-close").hidden = true;
+    renderLog();
+    if (!state.online) findModel().then(renderLog);
+  } else if (docked) {
+    document.body.insertBefore(panel, $("auth"));
+    panel.classList.remove("docked");
+    panel.hidden = true;
+    docked = false;
+    fab.hidden = false;
+    fab.classList.remove("open");
+    fab.setAttribute("aria-expanded", "false");
+    $("chat-close").hidden = false;
+  }
+}
+
 /** Called by app.js when the view changes (Student / Operator). */
 export function setChatView(view) {
   if (view === state.view) return;
@@ -240,6 +268,6 @@ export function setupChat({ getFacts, view }) {
     const chip = e.target.closest(".chip-q");
     if (chip) send(chip.textContent);
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("chat").hidden) toggle(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !docked && !$("chat").hidden) toggle(false); });
   findModel();
 }
