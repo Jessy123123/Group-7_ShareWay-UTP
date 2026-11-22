@@ -4,9 +4,10 @@ import {
   $, num, MONTHS, DAYS, COLORS, charts, fmtDate, addDays, option, segmented, areaGradient, hexAlpha,
   REDUCED, countUp, replay, setChart, axisTitle, setupChartDefaults,
 } from "./ui.js";
-import { setupStudent, renderStudent, refreshStudent } from "./student.js";
+import { setupStudent, renderStudent, refreshStudent, studentFacts } from "./student.js";
 import { db } from "./db.js";
 import { setupAuth, checkGate } from "./auth.js";
+import { setupChat, setChatView } from "./chat.js";
 import { setupLive, leaveLive } from "./live.js";
 
 // page id: [title, subtitle, view]
@@ -67,6 +68,7 @@ function showPage(page) {
   document.body.dataset.view = view;
   updateProfile(view);
   checkGate(view);   // login pop-up when Supabase is connected
+  setChatView(view);
   document.querySelectorAll(".nav-item").forEach((b) => {
     const on = b.dataset.page === page;
     b.classList.toggle("active", on);
@@ -224,6 +226,42 @@ function renderOverview() {
   renderCurve(ev, trips, predTotal, actualTotal);
   renderPlan(trips);
   renderRoutes(ev);
+}
+
+/** What the operator Overview shows right now, as plain text for the AI assistant. */
+function operatorFacts() {
+  const ev = events.get(ov.eventKey);
+  const trips = selectedTrips();
+  const acc = data.accuracy;
+  const best = acc.best_model;
+  const count = (a) => trips.filter((t) => t.rec.action === a).length;
+  const lines = [
+    `Operator page open: ${PAGES[currentPage][0]}.`,
+    `Break: ${ev.event}, first day ${ev.firstDay}. Route filter: ${ov.route === "all" ? "all routes" : routeName(ov.route)}. `
+      + `Simulation run ${ov.run + 1}. Forecast made ${ov.days} days before departure.`,
+    "SUMMARY (copy these numbers exactly):",
+    `- Forecast passengers in total: ${Math.round(trips.reduce((s, t) => s + t.predicted, 0))}`,
+    `- Actual passengers in total (simulated): ${trips.reduce((s, t) => s + t.final, 0)}`,
+    `- Number of trips: ${trips.length}`,
+    `- Trips that use buses: ${count("bus")}`,
+    `- Trips that use one van: ${count("van")}`,
+    `- Trips cancelled (too few passengers): ${count("cancel")}`,
+    `- Buses to book in total, across all trips: ${trips.reduce((s, t) => s + t.rec.buses, 0)}`,
+    `- Extra standby buses: ${trips.filter((t) => t.rec.standby).length}`,
+    "Trips (date, route, bookings so far, forecast with likely range, plan, actual):",
+    ...trips.slice(0, 24).map((t) => `- ${t.date} Route ${t.route}: ${t.bookings} booked, forecast ${Math.round(t.predicted)} `
+      + `(likely ${Math.round(t.low)}-${Math.round(t.high)}), plan ${planText(t.rec)}${t.rec.standby ? " + standby" : ""}, actual ${t.final}`
+      + (db.enabled ? `, live ShareWay bookings ${db.count(t.route, t.date)}` : "")),
+    `Model: ${best}. Average error on unseen trips ${acc.overall[best]} passengers overall, `
+      + `${maeAt(best, ov.days)} at ${ov.days} days before departure (baseline ${acc.overall.Baseline}).`,
+    `Likely range: 10th to 90th percentile of past errors; the real number fell inside it ${acc.range.inside_pct}% of the time. `
+      + `Planning for the high end cut trips short of seats from ${acc.range.short_pct_forecast}% to ${acc.range.short_pct_high}%, `
+      + `costing about ${Math.round(acc.range.extra_seats)} extra seats per trip.`,
+    `Vehicle rules: fewer than ${data.config.MIN_PASSENGERS} passengers -> cancel and offer carpools; up to ${data.config.VAN_CAPACITY} -> one van; `
+      + `otherwise ${data.config.BUS_CAPACITY}-seat buses, plus a standby bus when the last bus is at least ${Math.round(data.config.STANDBY_FRACTION * 100)}% full. `
+      + "Vehicles are planned for the high end of the forecast range.",
+  ];
+  return lines.join("\n");
 }
 
 // ---------- routes card ----------
@@ -936,6 +974,7 @@ async function init() {
   // Real logins and bookings (Supabase). Runs in the background; without a key
   // in js/supabase-config.js the site stays in demo mode.
   setupAuth({ onSwitchView: (view) => { location.hash = HOME[view]; } });
+  setupChat({ getFacts: (view) => (view === "student" ? studentFacts() : operatorFacts()), view: PAGES[currentPage]?.[2] ?? savedView() });
   $("sign-out").addEventListener("click", () => db.signOut());
   const gate = () => {
     const view = PAGES[currentPage][2];

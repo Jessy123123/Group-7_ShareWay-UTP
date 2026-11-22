@@ -179,7 +179,15 @@ python -m unittest discover tests -v
 
 `web/` is a static site with two views, switched with the **Operator | Student** button at the top.
 
-**Real logins and bookings (optional):** with a Supabase project set up (see [supabase/README.md](supabase/README.md)), students sign in with their UTP email, bus seats are saved to a real database, and the operator's trip plan shows a **Live** column of seats booked. Without it, the site runs in demo mode and bookings stay in the visitor's browser.
+**Real logins and bookings (optional):** with a Supabase project set up (see [supabase/README.md](supabase/README.md)), students sign in with their UTP email, bus seats are saved to a real database, and the operator's trip plan shows a **Live** column of seats booked. Without it, the site runs in demo mode and bookings stay in the visitor's browser. When Supabase is connected, a login pop-up appears for each view: students use their UTP email; operators can use any email (Gmail is fine).
+
+**AI assistant (Ollama):** the **Ask AI** button opens a chat for students and operators. It runs on [Ollama](https://ollama.com) on the computer that opens the site and only answers from the numbers the dashboard is showing (forecast, plan, bus, carpool, costs), so it explains the app's own data.
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Ollama must be running (`ollama serve`, or the Ollama app). Pages on `localhost` can reach it straight away. For the Vercel site, allow its address first, e.g. on Windows PowerShell: `setx OLLAMA_ORIGINS "https://your-app.vercel.app"`, then restart Ollama. Visitors without Ollama see an "assistant offline" message; everything else still works. A small model like `llama3.2:3b` can still get details wrong; a bigger one (e.g. `llama3.1:8b`) answers more accurately if the computer can run it.
 
 **Operator (PMMD)**
 

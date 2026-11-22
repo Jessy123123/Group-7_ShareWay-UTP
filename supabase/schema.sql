@@ -55,29 +55,25 @@ as $$
   select exists (select 1 from public.profiles where id = auth.uid() and role = 'operator');
 $$;
 
--- Operators can use any email (e.g. Gmail), but only if an admin has approved
--- the address first. No policies: only editable in the SQL Editor.
---   insert into public.operator_emails (email) values ('someone@gmail.com');
-create table if not exists public.operator_emails (
-  email text primary key check (email = lower(email))
-);
-alter table public.operator_emails enable row level security;
-
--- A new sign-up gets a profile. Students need a UTP email; approved operator
--- emails can be anything and get the operator role straight away.
+-- A new sign-up gets a profile. Students need a UTP email. Accounts created
+-- from the Operator login (role = 'operator' in the sign-up data) can use any
+-- email, e.g. Gmail, and become operators straight away.
+-- NOTE (demo setting): anyone can create an operator account, and operators
+-- can see every booking. Fine for a class demo; a real system would approve
+-- operators first.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql security definer set search_path = public
 as $$
 declare
-  approved_operator boolean := exists (select 1 from public.operator_emails where email = lower(new.email));
+  is_operator boolean := coalesce(new.raw_user_meta_data ->> 'role', '') = 'operator';
 begin
-  if not approved_operator and lower(new.email) not like '%@utp.edu.my' then
+  if not is_operator and lower(new.email) not like '%@utp.edu.my' then
     raise exception 'Please sign up with your UTP email (@utp.edu.my)';
   end if;
   insert into public.profiles (id, email, full_name, role)
   values (new.id, lower(new.email), coalesce(new.raw_user_meta_data ->> 'full_name', ''),
-          case when approved_operator then 'operator' else 'student' end);
+          case when is_operator then 'operator' else 'student' end);
   return new;
 end;
 $$;
@@ -161,9 +157,7 @@ $$;
 revoke execute on function public.bookings_so_far(integer) from public, anon;
 grant execute on function public.bookings_so_far(integer) to authenticated;
 
--- ---------- operators (run separately) ----------
--- New operator with any email: approve the address, then they create their
--- account from the Operator login on the website.
---   insert into public.operator_emails (email) values ('someone@gmail.com');
--- Someone who already has an account:
+-- ---------- operators ----------
+-- Operators create their own account from Operator -> Create account on the
+-- website (any email). To turn an existing account into an operator:
 --   update public.profiles set role = 'operator' where email = 'their@email.com';

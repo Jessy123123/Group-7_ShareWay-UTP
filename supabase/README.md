@@ -30,19 +30,13 @@ for real, and the operator's trip plan shows live seat counts.
 The website shows a login pop-up when Supabase is connected:
 
 - **Student view**: sign in or create an account with a `@utp.edu.my` email.
-- **Operator view**: only accounts with the operator role get in. Operators can
-  use **any** email (Gmail is fine), but an admin must approve it first.
+- **Operator view**: sign in or create an account with **any** email (Gmail is fine).
+  Accounts created there get the operator role straight away.
 
-## Make someone an operator
+Demo setting: anyone can create an operator account, and operators can see every
+booking. A real system would approve operators first.
 
-New operator (any email): approve the address in the SQL Editor, then they
-choose **Operator → Create account** on the website and get the operator role:
-
-```sql
-insert into public.operator_emails (email) values ('someone@gmail.com');
-```
-
-Someone who already has an account:
+To turn an existing account into an operator, run in the SQL Editor:
 
 ```sql
 update public.profiles set role = 'operator' where email = 'their@email.com';
@@ -50,11 +44,11 @@ update public.profiles set role = 'operator' where email = 'their@email.com';
 
 ## Rules the database enforces
 
-- Students sign up with `@utp.edu.my` emails; other emails only if approved as operators.
+- Students sign up with `@utp.edu.my` emails; operator accounts can use any email.
 - Students only see their own bookings; everyone can see *how many* seats are booked per trip.
 - A student can hold one seat per trip and can only book trips that haven't left yet.
 - Bookings are cancelled, never deleted, so the history stays for retraining.
-- Students can't make themselves operators.
+- Nobody can change their own role after signing up.
 
 ## Using real bookings to retrain the model
 

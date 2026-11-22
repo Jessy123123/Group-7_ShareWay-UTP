@@ -98,7 +98,7 @@ function render() {
     body = `
       <h3 id="auth-title">${signUp ? "Create your account" : view === "operator" ? "Operator sign in" : "Welcome back"}</h3>
       <p class="auth-sub">${view === "operator"
-        ? (signUp ? "Use the email the admin approved for you." : "Sign in with your operator email to continue.")
+        ? (signUp ? "Any email works, Gmail included." : "Sign in with your operator email to continue.")
         : (signUp ? "Use your UTP email. It only takes a minute." : "Sign in with your UTP email to continue.")}</p>
       <div class="auth-tabs" role="tablist">
         <button type="button" role="tab" data-auth-mode="sign-in" class="${!signUp ? "active" : ""}" aria-selected="${!signUp}">Sign in</button>
@@ -116,7 +116,7 @@ function render() {
         <p class="auth-msg" id="auth-msg" role="status"></p>
       </form>
       <p class="auth-note">${view === "operator"
-        ? "Operators can use any email (Gmail is fine), but the admin has to approve it first. Students sign in from the Student tab."
+        ? "Operators can use any email (Gmail is fine). Students sign in from the Student tab."
         : "Only @utp.edu.my addresses can sign up. Your name and email are used for bookings only."}</p>`;
   }
 

@@ -742,6 +742,49 @@ export function setupStudent(ctx) {
   db.onChange(refreshStudent);
 }
 
+/** What the student is looking at right now, as plain text for the AI assistant. */
+export function studentFacts() {
+  if (!data || !st.eventKey || !st.date) return "No trip picked yet.";
+  const ev = events.get(st.eventKey);
+  const bus = busOption();
+  const car = carpoolOption();
+  const alone = L.co2Saved(1, directKm(st.town), "bus", "car");
+  const grab = L.co2Saved(1, directKm(st.town), "bus", "ehailing");
+  const lines = [
+    `Break: ${ev.event}, first day ${ev.firstDay}. The student is going home to ${st.town}, leaving on ${dayName(st.date)} ${st.date} around ${st.time}.`,
+  ];
+  if (!bus.trip) lines.push(`University bus: not available. ${bus.why}`);
+  else if (!bus.available) {
+    lines.push(`University ${bus.vehicle} on Route ${bus.route}: likely to be CANCELLED, only about ${bus.expected} students expected `
+      + `(trips under ${data.config.MIN_PASSENGERS} are cancelled and students are offered carpools). ${bus.booked} booked so far.`);
+  } else {
+    lines.push(`University ${bus.vehicle} on Route ${bus.route} (${data.config.ROUTES[bus.route].name}): ${planText(bus.rec)}, `
+      + `${bus.booked} of ${bus.capacity} seats booked so far, about ${bus.expected} students expected to travel, ${bus.left} days before departure. `
+      + `No fare is shown for the university bus/van. CO2 saved vs driving alone: ${bus.savedKg.toFixed(1)} kg.`
+      + (bus.mineBooked ? " The student HAS BOOKED a seat on it." : " The student has not booked it yet."));
+  }
+  if (car.available) {
+    const b = car.best;
+    lines.push(`Carpool: ${car.count} student driver(s) going their way. Best match: driver ${b.driver.id}, leaves ${clock(b.driver.minute)} `
+      + `(${b.time_diff_hours === 0 ? "same time" : `${Math.round(b.time_diff_hours * 60)} min apart`}), driving to ${b.driver.town}, `
+      + `${b.detour_km} km detour. Student's share of petrol and tolls RM ${car.fare.toFixed(2)}, saves RM ${car.savedRm.toFixed(2)} and `
+      + `${car.savedKg.toFixed(1)} kg CO2 vs driving alone.`);
+  } else {
+    lines.push(`Carpool: no student driver leaves within ${data.config.MAX_TIME_DIFF_HOURS} hours of ${st.time} towards ${st.town}.`);
+  }
+  lines.push(`Going alone: driving own car about RM ${alone.solo_rm.toFixed(2)} and ${alone.solo_kg.toFixed(1)} kg CO2; e-hailing about RM ${grab.solo_rm.toFixed(2)}.`);
+  const route = routeOf(st.town);
+  lines.push(`Other departure days for this break: ${eventDates(st.eventKey).map((d) => `${dayName(d)} ${d} (${dayStatus(route, d)})`).join("; ")}.`);
+  const trips = allTrips();
+  lines.push(trips.length
+    ? `Student's booked trips: ${trips.map((t) => `${t.title} on ${t.date} (${t.status ?? "booked"})`).join("; ")}.`
+    : "The student has no booked trips yet.");
+  lines.push(`Carpool rules: driver and passenger leave within ${data.config.MAX_TIME_DIFF_HOURS} hours, detour at most `
+    + `${data.config.MAX_DETOUR_KM} km, best match first. Bus seats are booked on the Plan trip page; carpools on the Carpool page; `
+    + "My trips lists bookings and money/CO2 saved. Bus plans use the high end of the demand forecast range so fewer trips run out of seats.");
+  return lines.join("\n");
+}
+
 /** Redraw the open student page (after Supabase connects or someone signs in/out). */
 export function refreshStudent() {
   updateBadge();

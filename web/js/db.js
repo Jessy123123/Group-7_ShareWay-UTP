@@ -28,7 +28,7 @@ function notify() {
 function friendly(err) {
   const msg = err?.message ?? String(err);
   if (/database error saving new user/i.test(msg)) {
-    return `Students must use a UTP email (${UTP_DOMAIN}). Operators: ask the admin to approve your email first.`;
+    return `Students must use a UTP email (${UTP_DOMAIN}). Operators: use the Operator tab to sign up with any email.`;
   }
   if (/invalid login credentials/i.test(msg)) return "Wrong email or password.";
   if (/email not confirmed/i.test(msg)) return "Confirm your email first: check your UTP inbox for the link.";
@@ -109,15 +109,18 @@ export const db = {
     counts = new Map(rows.map((r) => [Number(r.trip_id), Number(r.booked)]));
   },
 
-  /** Students need a UTP email. Operators can use any email the admin has
-   * approved (operator_emails table); the database checks that. */
+  /** Students need a UTP email. Operator accounts can use any email; the
+   * database gives them the operator role (see handle_new_user in schema.sql). */
   async signUp(email, password, fullName, asOperator = false) {
     email = email.trim().toLowerCase();
     if (!asOperator && !email.endsWith(UTP_DOMAIN)) return { error: `Please use your UTP email (${UTP_DOMAIN}).` };
     if (password.length < 8) return { error: "Use a password of at least 8 characters." };
     const { data: res, error: err } = await client.auth.signUp({
       email, password,
-      options: { data: { full_name: fullName.trim() }, emailRedirectTo: location.origin + location.pathname },
+      options: {
+        data: { full_name: fullName.trim(), role: asOperator ? "operator" : "student" },
+        emailRedirectTo: location.origin + location.pathname,
+      },
     });
     if (err) return { error: friendly(err) };
     if (!res.session) return { info: "Account created. Check your UTP inbox for the confirmation link, then sign in." };
