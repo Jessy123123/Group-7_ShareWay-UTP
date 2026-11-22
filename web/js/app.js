@@ -4,7 +4,8 @@ import {
   $, num, MONTHS, DAYS, COLORS, charts, fmtDate, addDays, option, segmented, areaGradient, hexAlpha,
   REDUCED, countUp, replay, setChart, axisTitle, setupChartDefaults,
 } from "./ui.js";
-import { setupStudent, renderStudent } from "./student.js";
+import { setupStudent, renderStudent, refreshStudent } from "./student.js";
+import { db } from "./db.js";
 import { setupLive, leaveLive } from "./live.js";
 
 // page id: [title, subtitle, view]
@@ -73,7 +74,10 @@ function showPage(page) {
   $("page-title").textContent = PAGES[page][0];
   $("page-sub").textContent = PAGES[page][1];
   if (page === "carpool") renderCarpool();
-  if (page === "overview") renderRouteMap();
+  if (page === "overview") {
+    renderRouteMap();
+    if (db.enabled) db.refreshCounts().then(() => renderPlan(selectedTrips()));
+  }
   if (view === "student") renderStudent(page);
   window.scrollTo({ top: 0 });
 
@@ -453,6 +457,7 @@ function renderCurve(ev, trips, predTotal, actualTotal) {
 }
 
 function renderPlan(trips) {
+  $("th-live").hidden = !db.enabled;   // real seats booked on ShareWay (Supabase)
   replay($("plan-body"), "fresh");
   $("plan-body").innerHTML = trips.map((t) => `
     <tr>
@@ -462,6 +467,7 @@ function renderPlan(trips) {
       <td class="num"><strong>${round(t.predicted)}</strong> <span class="muted small">${round(t.low)}–${round(t.high)}</span></td>
       <td>${planTag(t.rec)}</td>
       <td class="num">${t.final}</td>
+      ${db.enabled ? `<td class="num"><strong>${db.count(t.route, t.date)}</strong></td>` : ""}
     </tr>`).join("");
 }
 
@@ -913,6 +919,14 @@ async function init() {
   setupStudent({ data, L, events, towns });
   setupLive({ data, L, events });
   showPage(location.hash.slice(1) || HOME[savedView()]);
+
+  // Real logins and bookings (Supabase). Runs in the background; without a key
+  // in js/supabase-config.js the site stays in demo mode.
+  db.onChange(() => renderPlan(selectedTrips()));
+  db.init().then(() => {
+    refreshStudent();
+    renderPlan(selectedTrips());
+  });
 }
 
 init();

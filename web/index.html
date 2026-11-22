@@ -194,7 +194,7 @@
             <div id="view-curve" class="chart-box tall"><canvas id="c-curve" aria-label="Bookings over time for the break"></canvas></div>
             <div id="view-plan" class="table-wrap" hidden>
               <table class="table">
-                <thead><tr><th>Departure</th><th>Route</th><th class="num">Bookings so far</th><th class="num">Forecast</th><th>Plan</th><th class="num">Actual</th></tr></thead>
+                <thead><tr><th>Departure</th><th>Route</th><th class="num">Bookings so far</th><th class="num">Forecast</th><th>Plan</th><th class="num">Actual</th><th class="num" id="th-live" hidden title="Real seats booked on ShareWay right now">Live</th></tr></thead>
                 <tbody id="plan-body"></tbody>
               </table>
             </div>
@@ -608,6 +608,7 @@
 
     <!-- STUDENT: MY TRIPS -->
     <section class="page" id="page-student-trips" hidden>
+      <div class="card account-card" id="account"></div>
       <div class="kpis three">
         <div class="card kpi"><span class="kpi-label">Trips booked</span><strong class="kpi-value" id="mt-count">0</strong><span class="kpi-sub" id="mt-count-sub"></span></div>
         <div class="card kpi"><span class="kpi-label">Money saved</span><strong class="kpi-value" id="mt-rm">RM 0.00</strong><span class="kpi-sub">compared with driving alone</span></div>
@@ -616,7 +617,7 @@
       <div class="card">
         <div class="card-head">
           <h2>Booked trips</h2>
-          <span class="muted small">Saved in this browser only (demo, no real booking)</span>
+          <span class="muted small" id="mt-note">Saved in this browser only (demo, no real booking)</span>
         </div>
         <div class="table-wrap">
           <table class="table">

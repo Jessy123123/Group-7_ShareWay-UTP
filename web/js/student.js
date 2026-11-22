@@ -10,6 +10,7 @@ import {
   $, num, MONTHS, DAYS, COLORS, charts, fmtDate, option, areaGradient,
   countUp, replay, setChart, axisTitle,
 } from "./ui.js";
+import { db } from "./db.js";
 
 let data;
 let L;
@@ -77,9 +78,14 @@ function loadTrips() {
 
 function saveTrips() {
   try { localStorage.setItem(STORE, JSON.stringify(myTrips)); } catch { /* private mode: kept until reload */ }
+  updateBadge();
+}
+
+function updateBadge() {
+  const n = allTrips().length;
   const badge = $("trips-badge");
-  badge.hidden = myTrips.length === 0;
-  badge.textContent = myTrips.length;
+  badge.hidden = n === 0;
+  badge.textContent = n;
 }
 
 function addTrip(trip) {
@@ -172,21 +178,41 @@ function busOption() {
   const trip = tripFor(st.eventKey, route, st.date);
   if (!trip) return { available: false, route, why: `There's no Route ${route} bus on ${dayName(st.date)} ${fmtDate(st.date)}. Try another day.` };
 
-  const { left, snap } = snapshotNow(trip);
   const key = `bus|${trip.id}`;
-  const booked = snap[1] + (hasTrip(key) ? 1 : 0);
+  // signed in: the seat is saved in Supabase; demo mode: in this browser
+  const mineBooked = db.enabled ? db.hasBooking(route, st.date) : hasTrip(key);
+  const n = busNumbers(route, st.town, trip);
+  return {
+    ...n, available: n.rec.action !== "cancel", trip, route, key, mineBooked,
+    booked: n.snap[1] + (mineBooked ? 1 : 0),
+    live: db.enabled ? db.count(route, st.date) : null,
+  };
+}
+
+/** Any simulated trip (run 1) for a route and date, whatever the break. */
+function findTrip(route, date) {
+  for (const ev of events.values()) {
+    const t = ev.trips.find((x) => x.run === RUN && x.route === route && x.date === date);
+    if (t) return t;
+  }
+  return null;
+}
+
+/** Fare, plan and savings for one student on a bus trip. */
+function busNumbers(route, town, trip) {
+  const { left, snap } = snapshotNow(trip);
   const expected = Math.max(1, Math.round(snap[2]));
   const rec = L.recommend(snap[4]);   // vehicles are planned for the high end of the forecast range
   const vehicle = rec.action === "van" ? "van" : "bus";
   const capacity = rec.action === "bus" ? rec.buses * data.config.BUS_CAPACITY
     : rec.action === "van" ? data.config.VAN_CAPACITY : 0;
 
-  const km = L.stopKm(route, st.town);
+  const km = L.stopKm(route, town);
   const fare = L.co2Saved(1, km, vehicle).shared_rm;
   const sharedKgEach = L.co2Saved(expected, km, vehicle).shared_kg / expected;
-  const alone = L.co2Saved(1, directKm(st.town), "bus", "car");
+  const alone = L.co2Saved(1, directKm(town), "bus", "car");
   return {
-    available: rec.action !== "cancel", trip, route, left, booked, expected, rec, capacity, key, vehicle,
+    left, snap, expected, rec, capacity, vehicle,
     fare, savedRm: alone.solo_rm - fare, savedKg: alone.solo_kg - sharedKgEach,
   };
 }
@@ -319,18 +345,22 @@ function renderBusCard(bus, isBest) {
       + '<div class="card-actions"><button class="btn-ghost" data-act="go-carpool">Find a carpool instead</button></div>';
     return;
   }
-  const booked = hasTrip(bus.key);
+  const booked = bus.mineBooked;
   const pct = Math.min(100, (100 * bus.booked) / bus.capacity);
+  const button = db.enabled && !db.user
+    ? '<button class="btn" data-act="sign-in">Sign in to book</button>'
+    : `<button class="btn" data-act="book-bus" ${booked ? "disabled" : ""}>${booked ? "Seat booked ✓" : "Book a seat"}</button>`;
   el.innerHTML = cardHead(title, `${isBest ? '<span class="tag van">Best value</span> ' : ""}<span class="tag ${bus.rec.action}">${planText(bus.rec)}</span>`)
     + kvTable([
       ["Route", routeText],
       ["Fare per seat", rm(bus.fare)],
       ["Seats booked so far", `<span class="bar"><i style="width:${pct}%"></i></span>${bus.booked} of ${bus.capacity}`],
       ["Expected to travel", `about ${bus.expected}`],
+      ...(bus.live !== null ? [["Booked on ShareWay (live)", `${bus.live} student${bus.live === 1 ? "" : "s"}`]] : []),
       ["You save vs driving", `<span class="good">${rm(bus.savedRm)}</span>`],
       ["CO₂ saved", `<span class="good">${kg(bus.savedKg)}</span>`],
     ])
-    + `<div class="card-actions"><button class="btn" data-act="book-bus" ${booked ? "disabled" : ""}>${booked ? "Seat booked ✓" : "Book a seat"}</button></div>`;
+    + `<div class="card-actions">${button}</div>`;
 }
 
 function renderCarpoolCard(car, isBest) {
@@ -378,7 +408,7 @@ function renderDemand(bus) {
   const snaps = bus.trip.snaps;
   const nowIdx = snaps.findIndex((s) => s[0] === snapshotNow(bus.trip).snap[0]);
   const n = days.length + 1;
-  const mine = hasTrip(bus.key) ? 1 : 0;
+  const mine = bus.mineBooked ? 1 : 0;
   $("sp-demand-title").textContent = `How full is the ${dayName(bus.trip.date)} ${fmtDate(bus.trip.date)} ${bus.vehicle}?`;
   $("sp-demand-sub").textContent = bus.left > days[0] ? "Bookings have just opened" : `${bus.left} days to go`;
 
@@ -568,8 +598,19 @@ function renderStudentMap(lines) {
 
 // ---------- actions ----------
 
-function act(what, btn) {
+async function act(what, btn) {
   if (what === "go-carpool") { location.hash = "student-carpool"; return; }
+  if (what === "sign-in") { location.hash = "student-trips"; return; }
+
+  if (what === "book-bus" && db.enabled) {
+    const bus = busOption();
+    if (!db.user) { location.hash = "student-trips"; return; }
+    btn.disabled = true;
+    const res = await db.book(bus.route, st.date, st.town);
+    toast(res.error ?? `Seat booked on the ${dayName(st.date)} ${fmtDate(st.date)} ${bus.vehicle} to ${st.town}`);
+    renderPlan();
+    return;
+  }
 
   if (what === "book-bus") {
     const bus = busOption();
@@ -620,8 +661,87 @@ function act(what, btn) {
 
 const STATUS_TAG = { "Seat booked": "bus", Requested: "standby", "Ride posted": "van" };
 
+/** Bus seats saved in Supabase, shaped like the local trips. */
+function liveTrips() {
+  return db.myBookings.map((b) => {
+    const trip = findTrip(b.route, b.date);
+    const n = trip ? busNumbers(b.route, b.destination, trip) : { vehicle: "bus", fare: 0, savedRm: 0, savedKg: 0 };
+    return {
+      id: `db-${b.id}`, dbId: b.id, kind: n.vehicle, date: b.date, time: "–", town: b.destination,
+      title: `University ${n.vehicle} to ${b.destination}`, detail: `Route ${b.route} · saved to your account`,
+      status: "Seat booked", paid: n.fare, rm: n.savedRm, kg: n.savedKg,
+    };
+  });
+}
+
+/** Everything in My trips. With Supabase, bus seats come from the database
+ * and only carpools (still a demo) come from this browser. */
+function allTrips() {
+  if (!db.enabled) return myTrips;
+  return [...myTrips.filter((t) => t.kind === "carpool" || t.kind === "offer"), ...liveTrips()];
+}
+
+function renderAccount() {
+  const el = $("account");
+  if (!db.enabled) {
+    el.innerHTML = `<div class="card-head"><h2>Demo mode</h2><span class="tag muted-tag">No account needed</span></div>
+      <p class="muted small">Bookings are saved in this browser only.${db.error ? ` (Database unavailable: ${esc(db.error)})` : ""}</p>`;
+    $("mt-note").textContent = "Saved in this browser only (demo, no real booking)";
+    return;
+  }
+  $("mt-note").textContent = db.user ? "Bus seats are saved to your account · carpools are still a demo" : "Sign in to save real bus seats";
+  if (db.user) {
+    const p = db.profile ?? {};
+    const name = p.full_name || db.user.email.split("@")[0];
+    el.innerHTML = `<div class="account-row">
+      <div class="avatar">${esc(name.slice(0, 2).toUpperCase())}</div>
+      <div class="who"><strong>${esc(name)}</strong><span>${esc(db.user.email)} · ${p.role === "operator" ? "Operator" : "Student"}</span></div>
+      <button class="btn-ghost" data-account="sign-out">Sign out</button>
+    </div>`;
+    return;
+  }
+  const mode = el.dataset.mode ?? "sign-in";
+  el.innerHTML = `<div class="card-head">
+      <h2>${mode === "sign-in" ? "Sign in to book real seats" : "Create your ShareWay account"}</h2>
+      <div class="tabs" role="tablist">
+        <button class="tab ${mode === "sign-in" ? "active" : ""}" data-account-mode="sign-in" role="tab">Sign in</button>
+        <button class="tab ${mode === "sign-up" ? "active" : ""}" data-account-mode="sign-up" role="tab">Create account</button>
+      </div>
+    </div>
+    <form class="account-form" id="account-form" novalidate>
+      ${mode === "sign-up" ? '<label class="field"><span>Full name</span><input id="acc-name" autocomplete="name" required></label>' : ""}
+      <label class="field"><span>UTP email</span><input id="acc-email" type="email" autocomplete="email" placeholder="name@utp.edu.my" required></label>
+      <label class="field"><span>Password</span><input id="acc-pass" type="password" autocomplete="${mode === "sign-in" ? "current-password" : "new-password"}" minlength="8" required></label>
+      <button class="btn" type="submit">${mode === "sign-in" ? "Sign in" : "Create account"}</button>
+    </form>
+    <p class="account-msg" id="acc-msg" role="status"></p>`;
+}
+
+async function onAccountSubmit(e) {
+  e.preventDefault();
+  const msg = $("acc-msg");
+  const email = $("acc-email").value;
+  const pass = $("acc-pass").value;
+  const name = $("acc-name")?.value ?? "";
+  msg.className = "account-msg";
+  if (!email || !pass || ($("acc-name") && !name.trim())) {
+    msg.className = "account-msg error";
+    msg.textContent = "Fill in every field first.";
+    return;
+  }
+  const submit = e.target.querySelector("button[type=submit]");
+  submit.disabled = true;
+  msg.textContent = "Please wait…";
+  const res = $("acc-name") ? await db.signUp(email, pass, name) : await db.signIn(email, pass);
+  submit.disabled = false;
+  if (!$("acc-msg")) return;   // signed in: the card was redrawn
+  $("acc-msg").className = `account-msg ${res.error ? "error" : "info"}`;
+  $("acc-msg").textContent = res.error ?? res.info ?? "";
+}
+
 function renderMyTrips() {
-  const sorted = [...myTrips].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  renderAccount();
+  const sorted = [...allTrips()].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
   countUp($("mt-count"), sorted.length);
   $("mt-count-sub").textContent = sorted.length ? `next: ${dayName(sorted[0].date)} ${fmtDate(sorted[0].date)}` : "nothing booked yet";
   countUp($("mt-rm"), sorted.reduce((s, t) => s + Math.max(0, t.rm), 0), rm);
@@ -647,8 +767,20 @@ function renderMyTrips() {
 }
 
 function setupMyTrips() {
-  $("mt-body").addEventListener("click", (e) => {
+  $("account").addEventListener("submit", onAccountSubmit);
+  $("account").addEventListener("click", async (e) => {
+    const modeBtn = e.target.closest("[data-account-mode]");
+    if (modeBtn) { $("account").dataset.mode = modeBtn.dataset.accountMode; renderAccount(); return; }
+    if (e.target.closest("[data-account='sign-out']")) { await db.signOut(); toast("Signed out"); }
+  });
+  $("mt-body").addEventListener("click", async (e) => {
     const remove = e.target.closest("[data-remove]");
+    if (remove && remove.dataset.remove.startsWith("db-")) {
+      remove.disabled = true;
+      const res = await db.cancel(Number(remove.dataset.remove.slice(3)));
+      toast(res.error ?? "Booking cancelled");
+      return;
+    }
     if (remove) {
       myTrips = myTrips.filter((t) => t.id !== remove.dataset.remove);
       saveTrips();
@@ -670,6 +802,14 @@ export function setupStudent(ctx) {
   setupPlan();
   setupCarpoolPage();
   setupMyTrips();
+  db.onChange(refreshStudent);
+}
+
+/** Redraw the open student page (after Supabase connects or someone signs in/out). */
+export function refreshStudent() {
+  updateBadge();
+  const page = location.hash.slice(1);
+  if (page.startsWith("student")) renderStudent(page);
 }
 
 export function renderStudent(page) {

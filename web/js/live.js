@@ -10,6 +10,7 @@ import {
   $, num, MONTHS, DAYS, COLORS, charts, fmtDate, addDays, option, segmented, areaGradient, hexAlpha,
   countUp, replay, setChart, axisTitle,
 } from "./ui.js";
+import { db } from "./db.js";
 
 const RUN = 0; // same simulation run as the student view, so student bookings line up
 const STUDENT_STORE = "shareway.trips.v1";
@@ -34,8 +35,10 @@ const firstDay = () => Math.max(...data.config.SNAPSHOT_DAYS);
 const lastDay = () => Math.min(...data.config.SNAPSHOT_DAYS);
 const dayList = () => Array.from({ length: firstDay() + 1 }, (_, i) => firstDay() - i); // 28 … 0
 
-/** 1 if the viewer booked this trip in the student view (same browser only). */
+/** 1 if the viewer booked this trip in the student view: saved to their
+ * Supabase account when signed in, otherwise in this browser only. */
 function ownBooking(trip) {
+  if (db.enabled) return db.hasBooking(trip.route, trip.date) ? 1 : 0;
   try {
     const mine = JSON.parse(localStorage.getItem(STUDENT_STORE)) ?? [];
     return mine.some((t) => t.key === `bus|${trip.id}`) ? 1 : 0;

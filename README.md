@@ -179,6 +179,8 @@ python -m unittest discover tests -v
 
 `web/` is a static site with two views, switched with the **Operator | Student** button at the top.
 
+**Real logins and bookings (optional):** with a Supabase project set up (see [supabase/README.md](supabase/README.md)), students sign in with their UTP email, bus seats are saved to a real database, and the operator's trip plan shows a **Live** column of seats booked. Without it, the site runs in demo mode and bookings stay in the visitor's browser.
+
 **Operator (PMMD)**
 
 | Page               | What it shows                                                                                                                                                                                    |
