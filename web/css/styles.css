@@ -218,6 +218,8 @@ h2 { font-size: 15px; }
 .dot-grey { background: var(--grey-bar); }
 .dot-primary { background: var(--primary); }
 .dot-green { background: var(--green); }
+.dot-band { background: color-mix(in srgb, var(--primary) 22%, transparent); border-radius: 3px; }
+.result-main .range-note { display: block; margin-top: 4px; color: var(--primary); font-weight: 500; }
 .dash { width: 16px; height: 0; border-top: 2px dashed var(--text); display: inline-block; }
 .dash.green { border-color: var(--green); }
 

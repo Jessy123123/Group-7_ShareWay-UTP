@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.append(str(ROOT))
 sys.path.append(str(ROOT / "src"))
 
-from train import predict_final
+from train import predict_range
 from decide import recommend
 from carpool import match
 from emissions import distance_km, co2_saved
@@ -80,16 +80,19 @@ if view == "Operator":
         bookings_so_far = st.number_input("Bookings so far", 0, 500, 20)
 
     if st.button("Forecast", type="primary"):
-        predicted = predict_final(route, days_before, bookings_so_far, date, is_holiday)
-        rec = recommend(predicted)
+        low, predicted, high = predict_range(route, days_before, bookings_so_far, date, is_holiday)
+        rec = recommend(high)   # plan for the high end of the range (safety margin)
 
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Predicted final", f"{predicted:.0f}")
+        m1.metric("Predicted final", f"{predicted:.0f}", help="Most likely number of passengers")
+        m1.caption(f"Likely {low:.0f} to {high:.0f}")
         if actual is not None:
             m2.metric("Actual final (simulated)", actual,
                       delta=f"{predicted - actual:+.0f} error", delta_color="off")
         m3.metric("Action", rec["action"].upper())
         m4.metric("Buses", rec["buses"])
+        st.caption(f"Vehicles are planned for the high end of the range ({high:.0f} passengers), "
+                   "so fewer trips end up short of seats.")
         if rec["standby"]:
             st.info("Standby bus recommended (last bus is almost full).")
         if rec["action"] == "cancel":

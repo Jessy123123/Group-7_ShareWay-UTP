@@ -48,6 +48,28 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(T.seats_planned(44), 2 * C.BUS_CAPACITY)    # 1 bus + standby
 
 
+class TestForecastRange(unittest.TestCase):
+    MARGINS = {1: [-0.06, 0.06], 28: [-0.3, 0.3]}
+
+    def test_range_contains_forecast(self):
+        low, high = T.apply_margins(self.MARGINS, [7, 7, 7], [0.0, 40.0, 200.0])
+        self.assertTrue(np.all(low <= [0.0, 40.0, 200.0]))
+        self.assertTrue(np.all(high >= [0.0, 40.0, 200.0]))
+        self.assertTrue(np.all(low >= 0))
+
+    def test_wider_far_from_departure_and_for_bigger_trips(self):
+        low1, high1 = T.apply_margins(self.MARGINS, [1], [100.0])
+        low28, high28 = T.apply_margins(self.MARGINS, [28], [100.0])
+        self.assertGreater(high28[0] - low28[0], high1[0] - low1[0])
+        _, high_small = T.apply_margins(self.MARGINS, [28], [20.0])
+        self.assertGreater(high28[0] - 100, high_small[0] - 20)
+
+    def test_planning_for_high_end_never_gives_fewer_seats(self):
+        for forecast in (3, 9, 30, 41, 90, 175):
+            _, high = T.apply_margins(self.MARGINS, [14], [float(forecast)])
+            self.assertGreaterEqual(T.seats_planned(high[0]), T.seats_planned(forecast))
+
+
 @unittest.skipUnless(T.MODEL_FILE.exists(), "run python src/train.py first")
 class TestPredictFinal(unittest.TestCase):
     def predict(self, bookings, days=1, date=SEM_BREAK_EVE, route="B"):
@@ -71,6 +93,14 @@ class TestPredictFinal(unittest.TestCase):
         self.assertGreaterEqual(self.predict(50, days=0), 0)
         self.assertGreaterEqual(self.predict(50, days=15), 0)   # between snapshots
         self.assertGreaterEqual(self.predict(50, date="2026-12-25"), 0)   # 9 days in
+
+    def test_predict_range(self):
+        low, mid, high = T.predict_range("B", 7, 100, SEM_BREAK_EVE, False)
+        self.assertLessEqual(low, mid)
+        self.assertLessEqual(mid, high)
+        self.assertAlmostEqual(mid, self.predict(100, days=7))
+        far_low, _, far_high = T.predict_range("B", 28, 30, SEM_BREAK_EVE, False)
+        self.assertGreater((far_high - far_low) / far_high, (high - low) / high)
 
     def test_beats_baseline_far_out(self):
         df = pd.read_csv(C.SIM_FILE)

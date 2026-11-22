@@ -176,7 +176,7 @@ function busOption() {
   const key = `bus|${trip.id}`;
   const booked = snap[1] + (hasTrip(key) ? 1 : 0);
   const expected = Math.max(1, Math.round(snap[2]));
-  const rec = L.recommend(snap[2]);
+  const rec = L.recommend(snap[4]);   // vehicles are planned for the high end of the forecast range
   const vehicle = rec.action === "van" ? "van" : "bus";
   const capacity = rec.action === "bus" ? rec.buses * data.config.BUS_CAPACITY
     : rec.action === "van" ? data.config.VAN_CAPACITY : 0;
@@ -239,7 +239,7 @@ function pickDefaultDate() {
 function dayStatus(route, date) {
   const trip = route && tripFor(st.eventKey, route, date);
   if (!trip) return "no bus";
-  const rec = L.recommend(snapshotNow(trip).snap[2]);
+  const rec = L.recommend(snapshotNow(trip).snap[4]);   // planned for the high end
   return rec.action === "cancel" ? "bus may be cancelled" : rec.action === "van" ? "van" : "bus";
 }
 

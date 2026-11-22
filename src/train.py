@@ -41,7 +41,7 @@ from sklearn.compose import ColumnTransformer  # noqa: E402
 from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor  # noqa: E402
 from sklearn.linear_model import LinearRegression  # noqa: E402
 from sklearn.metrics import mean_absolute_error  # noqa: E402
-from sklearn.model_selection import GroupShuffleSplit  # noqa: E402
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit  # noqa: E402
 from sklearn.pipeline import Pipeline  # noqa: E402
 from sklearn.preprocessing import OneHotEncoder  # noqa: E402
 
@@ -162,6 +162,63 @@ def predict_rows(bundle, df):
     return apply_correction(bundle, df, bundle["model"].predict(df[C.FEATURES]))
 
 
+# Forecast range (safety margin). The range is measured, not guessed: the model
+# forecasts trips it was not trained on (cross-validation by trip) and we keep
+# how far off it was at each days_before. Errors are kept as
+# log((actual + 1) / (forecast + 1)), like the correction, so the range grows
+# with the size of the trip. Vehicles are then planned for the high end.
+
+def oof_margins(fit, predict, df):
+    """RANGE_LOW and RANGE_HIGH percentiles of the error at each days_before,
+    from forecasts of trips the model did not see.
+    fit(rows) -> model, predict(model, rows) -> forecasts."""
+    forecast = pd.Series(np.nan, index=df.index)
+    folds = GroupKFold(n_splits=C.MARGIN_FOLDS)
+    for train_idx, test_idx in folds.split(df, groups=df["trip_id"]):
+        model = fit(df.iloc[train_idx])
+        forecast.iloc[test_idx] = np.asarray(predict(model, df.iloc[test_idx]), dtype=float)
+    error = np.log((df[C.TARGET] + 1) / (forecast + 1))
+    q = error.groupby(df["days_before"]).quantile([C.RANGE_LOW, C.RANGE_HIGH]).unstack()
+    return {int(d): [float(r[C.RANGE_LOW]), float(r[C.RANGE_HIGH])] for d, r in q.iterrows()}
+
+
+def fit_margins(name, df):
+    """Error range of model `name`, measured on trips it was not trained on."""
+    return oof_margins(lambda rows: fit_bundle(name, rows), predict_rows, df)
+
+
+def apply_margins(margins, days_before, forecast):
+    """(low, high) around each forecast. Days between snapshots are interpolated."""
+    m = pd.Series(margins).sort_index()
+    days = np.clip(np.asarray(days_before, dtype=float), *DAYS_RANGE)
+    lo = np.interp(days, m.index.astype(float), [r[0] for r in m])
+    hi = np.interp(days, m.index.astype(float), [r[1] for r in m])
+    forecast = np.asarray(forecast, dtype=float)
+    low = np.maximum(0.0, (forecast + 1) * np.exp(lo) - 1)
+    high = (forecast + 1) * np.exp(hi) - 1
+    return np.minimum(low, forecast), np.maximum(high, forecast)
+
+
+def range_report(test, forecast, low, high):
+    """How the range performs on unseen trips: how often the real number falls
+    inside it, and what planning for the high end costs and saves."""
+    actual = test[C.TARGET].to_numpy()
+    seats_forecast = np.array([seats_planned(p) for p in forecast])
+    seats_high = np.array([seats_planned(p) for p in high])
+    days = test["days_before"].to_numpy()
+    inside = (actual >= low) & (actual <= high)
+    by_days = pd.DataFrame({"days": days, "inside": inside, "width": high - low}) \
+        .groupby("days").mean().sort_index(ascending=False)
+    return {
+        "inside_pct": 100 * float(inside.mean()),
+        "short_pct_forecast": 100 * float(np.mean(seats_forecast < actual)),
+        "short_pct_high": 100 * float(np.mean(seats_high < actual)),
+        "extra_seats": float(np.mean(seats_high - seats_forecast)),
+        "by_days": {int(d): {"inside_pct": round(100 * r["inside"], 1), "width": round(r["width"], 1)}
+                    for d, r in by_days.iterrows()},
+    }
+
+
 def evaluate(train, test):
     """Predict the test trips with every approach. Returns one column per approach."""
     predictions = pd.DataFrame(index=test.index)
@@ -233,9 +290,26 @@ def train():
     print(short_trips(test_df, predictions).round(1).to_string())
     save_chart(by_snapshot)
 
-    # Keep the best machine learning model, retrained on every trip
+    # Keep the best machine learning model
     best_name = overall.drop(BASELINE).idxmin()
+
+    # Forecast range: errors measured on the training trips only, checked on the test trips
+    low, high = apply_margins(fit_margins(best_name, train_df), test_df["days_before"],
+                              predictions[best_name])
+    rep = range_report(test_df, predictions[best_name], low, high)
+    print(f"\nForecast range ({best_name}, {C.RANGE_LOW:.0%} to {C.RANGE_HIGH:.0%} of past errors), test trips:")
+    print(f"  Real number inside the range: {rep['inside_pct']:.1f}%")
+    print(f"  Trips short of seats: {rep['short_pct_forecast']:.1f}% planning for the forecast, "
+          f"{rep['short_pct_high']:.1f}% planning for the high end")
+    print(f"  Cost: {rep['extra_seats']:.1f} extra seats per trip on average")
+    print("  At each days_before (range width in passengers, % inside):")
+    for d, r in rep["by_days"].items():
+        print(f"    {d:>2}  width {r['width']:>5.1f}  inside {r['inside_pct']:>5.1f}%")
+
+    # Retrain on every trip and measure the range on every trip for the saved model
     best = fit_bundle(best_name, df)
+    best["margins"] = fit_margins(best_name, df)
+    best["range"] = [C.RANGE_LOW, C.RANGE_HIGH]
     MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(best, MODEL_FILE)
     print(f"\nSaved {best_name} to {MODEL_FILE}")
@@ -250,7 +324,7 @@ def load_model():
         raise FileNotFoundError(
             f"No trained model at {MODEL_FILE}. Run `python src/train.py` from the repo root first.")
     bundle = joblib.load(MODEL_FILE)
-    if not isinstance(bundle, dict):
+    if not isinstance(bundle, dict) or "margins" not in bundle:
         raise RuntimeError(
             f"{MODEL_FILE} was saved by an older train.py. Run `python src/train.py` again.")
     return bundle
@@ -279,7 +353,16 @@ def predict_final(route, days_before, bookings_so_far, departure_date, is_holida
         "is_holiday": int(is_holiday),
         "departure_offset": departure_offset(departure_date, is_holiday),
     }])
-    return float(predict_rows(load_model(), row)[0])
+    return float(np.asarray(predict_rows(load_model(), row))[0])
+
+
+def predict_range(route, days_before, bookings_so_far, departure_date, is_holiday):
+    """(low, forecast, high) final passengers for one trip. Plan vehicles for
+    `high`: the real number was above it in only about RANGE_HIGH of past
+    unseen trips' errors, so fewer trips end up short of seats."""
+    forecast = predict_final(route, days_before, bookings_so_far, departure_date, is_holiday)
+    low, high = apply_margins(load_model()["margins"], [days_before], [forecast])
+    return float(low[0]), forecast, float(high[0])
 
 
 if __name__ == "__main__":

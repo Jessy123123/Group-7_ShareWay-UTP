@@ -4,6 +4,7 @@
 //   match()          <- src/carpool.py
 //   co2Saved()       <- src/emissions.py
 //   predictFinal()   <- src/train.py (compact forest exported by src/export_web.py)
+//   predictRange()   <- src/train.py predict_range() (forecast range / safety margin)
 //
 // Every number comes from data/dashboard.json, which src/export_web.py builds
 // from config.py and emissions.py. If you change the RULES in the Python files,
@@ -100,6 +101,23 @@ export function createLogic(data) {
       interp(W.correction_range, days, (r) => r[1])]);
     const baseline = bookingsSoFar / interp(W.baseline_shares, days);   // predict_baseline()
     return Math.max(0, (baseline + 1) * Math.exp(correction) - 1);
+  }
+
+  // train.py: apply_margins(). (low, high) around a forecast, from how far off
+  // the model was on trips it had not seen at that days_before.
+  function applyMargins(margins, daysBefore, forecast) {
+    const days = clamp(daysBefore, data.web_model.days_range);
+    const lo = interp(margins, days, (r) => r[0]);
+    const hi = interp(margins, days, (r) => r[1]);
+    const low = Math.max(0, (forecast + 1) * Math.exp(lo) - 1);
+    const high = (forecast + 1) * Math.exp(hi) - 1;
+    return { low: Math.min(low, forecast), high: Math.max(high, forecast) };
+  }
+
+  // train.py: predict_range(). Plan vehicles for `high`.
+  function predictRange(route, daysBefore, bookingsSoFar, dateIso, isHoliday) {
+    const mid = predictFinal(route, daysBefore, bookingsSoFar, dateIso, isHoliday);
+    return { mid, ...applyMargins(data.web_model.margins, daysBefore, mid) };
   }
 
   // emissions.py
@@ -222,6 +240,6 @@ export function createLogic(data) {
   }
 
   return {
-    recommend, departureOffset, predictFinal, distanceKm, stopKm, co2Saved, detourKm, match,
+    recommend, departureOffset, predictFinal, applyMargins, predictRange, distanceKm, stopKm, co2Saved, detourKm, match,
   };
 }

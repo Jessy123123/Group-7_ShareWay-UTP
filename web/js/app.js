@@ -159,7 +159,8 @@ function selectedTrips() {
     .sort((a, b) => a.date.localeCompare(b.date) || a.route.localeCompare(b.route))
     .map((t) => {
       const snap = t.snaps.find((s) => s[0] === ov.days);
-      return { ...t, bookings: snap[1], predicted: snap[2], rec: L.recommend(snap[2]) };
+      // snap = [days_before, bookings, forecast, low, high]; vehicles are planned for the high end
+      return { ...t, bookings: snap[1], predicted: snap[2], low: snap[3], high: snap[4], rec: L.recommend(snap[4]) };
     });
 }
 
@@ -183,7 +184,7 @@ function renderOverview() {
   const standby = trips.filter((t) => t.rec.standby).length;
 
   countUp($("k-pred"), round(predTotal));
-  $("k-pred-sub").textContent = `Actual (simulated): ${num.format(actualTotal)}`;
+  $("k-pred-sub").textContent = `Actual (simulated): ${num.format(actualTotal)} · seats planned for ${num.format(trips.reduce((s, t) => s + Math.ceil(t.high), 0))}`;
   countUp($("k-trips"), trips.length);
   $("k-trips-sub").textContent = `${count("bus")} bus · ${count("van")} van · ${count("cancel")} cancelled`;
   countUp($("k-buses"), buses);
@@ -329,7 +330,10 @@ function renderBars(trips) {
         tooltip: {
           callbacks: {
             title: (items) => { const t = trips[items[0].dataIndex]; return `${fmtDate(t.date, true)} · Route ${t.route}`; },
-            afterBody: (items) => `Plan: ${planText(trips[items[0].dataIndex].rec)}`,
+            afterBody: (items) => {
+              const t = trips[items[0].dataIndex];
+              return [`Likely ${round(t.low)} to ${round(t.high)}`, `Plan (for ${round(t.high)}): ${planText(t.rec)}`];
+            },
           },
         },
       },
@@ -354,6 +358,13 @@ function renderTrip(trip) {
           label: "Bookings so far", data: snaps.map((s) => s[1]), borderColor: COLORS.accent,
           backgroundColor: areaGradient(COLORS.accent), fill: true, borderWidth: 2.5,
           pointRadius: snaps.map((_, i) => point(i)), pointBackgroundColor: COLORS.accent,
+        },
+        {
+          label: "Likely range (low)", data: snaps.map((s) => s[3]), borderWidth: 0, pointRadius: 0, fill: false,
+        },
+        {
+          label: "Likely range (high)", data: snaps.map((s) => s[4]), borderWidth: 0, pointRadius: 0,
+          fill: "-1", backgroundColor: hexAlpha(COLORS.primary, 0.12),
         },
         {
           label: "Forecast final", data: snaps.map((s) => s[2]), borderColor: COLORS.primary,
@@ -445,7 +456,7 @@ function renderPlan(trips) {
       <td>${DAYS[t.dow]} ${fmtDate(t.date, true)}</td>
       <td>Route ${t.route}</td>
       <td class="num">${t.bookings}</td>
-      <td class="num"><strong>${round(t.predicted)}</strong></td>
+      <td class="num"><strong>${round(t.predicted)}</strong> <span class="muted small">${round(t.low)}–${round(t.high)}</span></td>
       <td>${planTag(t.rec)}</td>
       <td class="num">${t.final}</td>
     </tr>`).join("");
@@ -500,10 +511,11 @@ function renderForecast() {
   $("w-context").textContent = `${DAYS[dayOfWeek(wf.date)]} ${fmtDate(wf.date, true)}, ${when} ${near.event}.`
     + (Math.abs(near.days) > 7 ? " This is far from any break in the calendar, so the forecast is less reliable." : "");
 
-  const pred = L.predictFinal(wf.route, wf.days, wf.bookings, wf.date, wf.holiday);
-  const rec = L.recommend(pred);
-  const demand = Math.max(0, Math.ceil(pred));
+  const { low, mid: pred, high } = L.predictRange(wf.route, wf.days, wf.bookings, wf.date, wf.holiday);
+  const rec = L.recommend(high);   // plan for the high end of the range (safety margin)
+  const demand = Math.max(0, Math.ceil(high));
   countUp($("r-pred"), round(pred), (v) => Math.round(v), 400);
+  $("r-range").textContent = `likely ${round(low)} to ${round(high)} · vehicles planned for ${Math.ceil(high)}`;
 
   const badge = $("r-badge");
   const text = rec.action === "cancel"
@@ -543,8 +555,11 @@ function renderForecast() {
   });
 
   const webMae = data.accuracy.overall["Web model (compact)"];
+  const r = data.accuracy.range;
   $("r-note").textContent = `An estimate, not a guarantee: on trips it never saw, this forecast was off by about `
-    + `${round(webMae, 1)} passengers on average. It uses a small Random Forest (a lighter copy of the trained model) so it can run in the browser.`;
+    + `${round(webMae, 1)} passengers on average. Planning for the high end of the range cut trips short of seats from `
+    + `${r.short_pct_forecast}% to ${r.short_pct_high}%, for about ${round(r.extra_seats)} extra seats per trip. `
+    + "It uses a small Random Forest (a lighter copy of the trained model) so it can run in the browser.";
 }
 
 function renderAccuracy() {
@@ -558,7 +573,8 @@ function renderAccuracy() {
   };
   const names = Object.keys(acc.by_days_before.series);
   $("acc-sub").textContent = `Average error in passengers on ${acc.test_trips} simulated trips the models never saw `
-    + `(a trip has ${acc.mean_final} passengers on average). Lower is better.`;
+    + `(a trip has ${acc.mean_final} passengers on average). Lower is better. The likely range held the real number `
+    + `${acc.range.inside_pct}% of the time.`;
   $("acc-legend").innerHTML = names.map((n) =>
     `<span><i class="${styles[n]?.dash.length ? "dash" : "dot"}" style="${styles[n]?.dash.length
       ? `border-color:${styles[n].c}` : `background:${styles[n]?.c}`}"></i>${n} (±${round(acc.overall[n], 1)})</span>`).join("");

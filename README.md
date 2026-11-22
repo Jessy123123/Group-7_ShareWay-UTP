@@ -148,6 +148,8 @@ Code to these signatures so everyone can work in parallel:
 ```python
 # train.py      (Jessy)
 predict_final(route, days_before, bookings_so_far, departure_date, is_holiday) -> float
+predict_range(route, days_before, bookings_so_far, departure_date, is_holiday) -> (low, forecast, high)
+                                                  # plan vehicles for `high` (safety margin)
 # decide.py     (Nadh)
 recommend(demand) -> {"action": "bus|van|cancel", "buses": int, "standby": bool}
 # carpool.py    (Chua)

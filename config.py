@@ -57,7 +57,7 @@ STANDBY_FRACTION = 0.90  # ASSUMPTION: last bus this full -> add a standby bus
 MIN_PASSENGERS = 5  # ASSUMPTION: below this -> cancel the trip
 
 # Simulation inputs
-TOTAL_STUDENTS = 6000  # ASSUMPTION
+TOTAL_STUDENTS = 7500  # ASSUMPTION
 LEAVE_RATE = 0.78  # SURVEY + ASSUMPTION: Q3 x LEAVE_WEIGHTS in analyze_survey.py
 
 ROUTE_SHARE = {"A": 0.19, "B": 0.63, "C": 0.13, "Other": 0.04}   # SURVEY Q5
@@ -101,3 +101,9 @@ FEATURES = ["route", "days_before",  # FIXED
 
 TARGET = "final_passengers"  # FIXED
 TEST_SIZE = 0.20  # FIXED
+
+# Forecast range (safety margin). The range comes from how far off the model
+# was on trips it had not seen. Vehicles are planned for the HIGH end.
+RANGE_LOW = 0.10   # ASSUMPTION: low end = 10th percentile of past errors
+RANGE_HIGH = 0.90  # ASSUMPTION: high end = 90th percentile; seats are planned for this
+MARGIN_FOLDS = 5   # FIXED: cross-validation folds used to measure those errors

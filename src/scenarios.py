@@ -2,7 +2,7 @@
 End-to-end demo scenarios. Every number printed here comes from the real
 functions, run on the SIMULATED data:
 
-    predict_final() -> recommend() -> match() -> co2_saved()
+    predict_range() -> recommend(high end) -> match() -> co2_saved()
 
   1. Southbound on 15 December (peak travel before the Sept 2026 sem break)
   2. A low-demand trip that is cancelled
@@ -29,7 +29,7 @@ import config as C  # noqa: E402
 from carpool import match  # noqa: E402
 from decide import recommend  # noqa: E402
 from emissions import co2_saved, distance_km, stop_km  # noqa: E402
-from train import load_model, predict_final, predict_rows  # noqa: E402
+from train import apply_margins, load_model, predict_range, predict_rows  # noqa: E402
 
 DEMO_RUN = 0  # which simulation run to take trips from
 
@@ -50,19 +50,21 @@ def heading(title):
 
 
 def forecast_row(row):
-    """predict_final() for one row of bookings.csv."""
-    return predict_final(row["route"], int(row["days_before"]), int(row["bookings_so_far"]),
+    """predict_range() for one row of bookings.csv: (low, forecast, high)."""
+    return predict_range(row["route"], int(row["days_before"]), int(row["bookings_so_far"]),
                          row["departure_date"], bool(row["is_holiday"]))
 
 
-def print_trip(row, predicted):
-    rec = recommend(predicted)
+def print_trip(row, forecast_range):
+    low, predicted, high = forecast_range
+    rec = recommend(high)   # vehicles are planned for the high end of the range
     actual = int(row["final_passengers"])
     print(f"  Trip {row['trip_id']}: route {row['route']} ({C.ROUTES[row['route']]['name']}), "
           f"{row['departure_date']}, {row['event_name']}")
     print(f"  {int(row['days_before'])} days before departure: "
           f"{int(row['bookings_so_far'])} bookings so far")
-    print(f"  Forecast final passengers: {predicted:.1f}  ->  plan: {describe(rec)}")
+    print(f"  Forecast final passengers: {predicted:.1f} (likely {low:.0f} to {high:.0f})")
+    print(f"  Plan for the high end ({high:.0f}):  {describe(rec)}")
     print(f"  Actual final (simulated):  {actual}  ->  ideal plan: {describe(recommend(actual))}")
     return rec, actual
 
@@ -93,7 +95,7 @@ def scenario_cancel(snap):
     if cancelled.empty:
         print(f"  No trip forecast under {C.MIN_PASSENGERS} passengers in this run.")
         return
-    row = cancelled.sort_values("predicted").iloc[0]
+    row = cancelled.sort_values("high").iloc[0]
     print_trip(row, forecast_row(row))
     print(f"  Fewer than {C.MIN_PASSENGERS} passengers expected, so the trip is cancelled.")
     first_stop = list(C.ROUTES[row["route"]]["stops"])[0]
@@ -109,9 +111,9 @@ def scenario_full(snap):
     if full.empty:
         print("  No trip in this run fills its last bus.")
     else:
-        row = full.sort_values("predicted").iloc[0]
+        row = full.sort_values("high").iloc[0]
         rec, _ = print_trip(row, forecast_row(row))
-        demand = math.ceil(row["predicted"])   # recommend() rounds up
+        demand = math.ceil(row["high"])   # recommend() rounds up
         last = demand - (rec["buses"] - 1) * C.BUS_CAPACITY
         print(f"  Planned for {demand}: the last bus would carry {last}/{C.BUS_CAPACITY} "
               f"(>= {C.STANDBY_FRACTION:.0%} full), so a standby bus is kept ready.")
@@ -170,7 +172,9 @@ def run_scenarios():
     df["departure_date"] = df["departure_date"].astype(str)
     snap = df[(df["sim_run"] == DEMO_RUN) & (df["days_before"] == 3)].copy()
     snap["predicted"] = predict_rows(load_model(), snap)
-    snap["plan"] = snap["predicted"].map(recommend)
+    snap["low"], snap["high"] = apply_margins(load_model()["margins"], snap["days_before"],
+                                              snap["predicted"])
+    snap["plan"] = snap["high"].map(recommend)   # plan for the high end of the range
 
     scenario_peak(df)
     scenario_cancel(snap)

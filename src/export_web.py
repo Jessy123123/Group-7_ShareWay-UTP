@@ -74,7 +74,7 @@ def forest_to_json(model):
             "t": np.where(leaf, 0, np.round(t.threshold, 4)).tolist(),
             "l": t.children_left.tolist(),
             "r": t.children_right.tolist(),
-            "v": np.round(t.value[:, 0, 0], 3).tolist(),
+            "v": np.round(t.value[:, 0, 0], 5).tolist(),
         })
     return trees
 
@@ -82,7 +82,9 @@ def forest_to_json(model):
 def export_trips(df):
     """One entry per trip, snapshots ordered from earliest to latest."""
     df = df.copy()
-    df["predicted"] = T.predict_rows(T.load_model(), df)
+    bundle = T.load_model()
+    df["predicted"] = np.asarray(T.predict_rows(bundle, df), dtype=float)
+    df["low"], df["high"] = T.apply_margins(bundle["margins"], df["days_before"], df["predicted"])
     trips = []
     for trip_id, g in df.sort_values("days_before", ascending=False).groupby("trip_id", sort=True):
         first = g.iloc[0]
@@ -96,9 +98,10 @@ def export_trips(df):
             "holiday": int(first["is_holiday"]),
             "offset": int(first["departure_offset"]),
             "final": int(first[C.TARGET]),
-            # [days_before, bookings_so_far, predicted_final]
-            "snaps": [[int(d), int(b), round(float(p), 1)]
-                      for d, b, p in zip(g["days_before"], g["bookings_so_far"], g["predicted"])],
+            # [days_before, bookings_so_far, predicted_final, low, high]
+            "snaps": [[int(d), int(b), round(float(p), 1), round(float(lo), 1), round(float(hi), 1)]
+                      for d, b, p, lo, hi in zip(g["days_before"], g["bookings_so_far"],
+                                                 g["predicted"], g["low"], g["high"])],
         })
     return trips
 
@@ -111,8 +114,14 @@ def model_accuracy(df):
     overall = {name: round(mean_absolute_error(test_df[C.TARGET], predictions[name]), 2)
                for name in predictions.columns}
     by_snapshot = T.mae_by_snapshot(test_df, predictions).round(2)
+    best = T.load_model()["name"]
+    # forecast range: errors measured on the training trips, checked on the test trips
+    low, high = T.apply_margins(T.fit_margins(best, train_df), test_df["days_before"], predictions[best])
+    rng = T.range_report(test_df, predictions[best], low, high)
     return {
-        "best_model": T.load_model()["name"],
+        "best_model": best,
+        "range": {"levels": [C.RANGE_LOW, C.RANGE_HIGH], **{k: (round(v, 1) if isinstance(v, float) else v)
+                                                         for k, v in rng.items()}},
         "overall": overall,
         "short_trips_pct": T.short_trips(test_df, predictions).round(1).to_dict(),
         "by_days_before": {
@@ -138,6 +147,7 @@ def export():
     accuracy = model_accuracy(df)
     print("Training compact web model on every trip...")
     compact = fit_compact(df)
+    compact_margins = T.oof_margins(fit_compact, predict_compact, df)
 
     data = {
         "generated_from": "SIMULATED data (data/simulated/bookings.csv), not real student bookings",
@@ -162,6 +172,8 @@ def export():
                                  for d, (lo, hi) in compact["correction_range"].items()},
             "days_range": list(T.DAYS_RANGE),
             "offset_range": {str(h): list(r) for h, r in T.OFFSET_RANGE.items()},
+            # forecast range: (forecast + 1) * exp(margin) - 1, see train.apply_margins()
+            "margins": {d: [round(lo, 5), round(hi, 5)] for d, (lo, hi) in compact_margins.items()},
             "trees": forest_to_json(compact["model"]),
         },
         "trips": export_trips(df),
