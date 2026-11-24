@@ -33,9 +33,9 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17 9 11l4 4 8-8"/><path d="M15 7h6v6"/></svg>
       <span>Forecast</span>
     </button>
-    <button class="nav-item" data-page="carpool" aria-label="Carpool matching" title="Carpool matching">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11 6.8 6.2A2 2 0 0 1 8.7 5h6.6a2 2 0 0 1 1.9 1.2L19 11"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/><circle cx="7.5" cy="14" r=".6"/><circle cx="16.5" cy="14" r=".6"/></svg>
-      <span>Carpool</span>
+    <button class="nav-item" data-page="decide" aria-label="Trip decisions" title="Trip decisions">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/></svg>
+      <span>Decide</span>
     </button>
     <button class="nav-item" data-page="emissions" aria-label="CO2 and cost saved" title="CO₂ and cost saved">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 20A7 7 0 0 1 4 13c0-6 7-9 16-9 0 9-3 16-9 16Z"/><path d="M4 21c3-5 6-8 10-10"/></svg>
@@ -348,66 +348,50 @@
       </div>
     </section>
 
-    <!-- CARPOOL -->
-    <section class="page" id="page-carpool" hidden>
+    <!-- OPERATOR: TRIP DECISIONS -->
+    <section class="page" id="page-decide" hidden>
+      <div class="card live-controls">
+        <div class="decide-pickers">
+          <label class="field">
+            <span>Break / holiday</span>
+            <select id="d-event"></select>
+          </label>
+          <div class="segmented" id="d-route" aria-label="Route"></div>
+        </div>
+      </div>
       <div class="kpis">
-        <div class="card kpi"><span class="kpi-label">Passengers matched</span><strong class="kpi-value" id="m-matched">–</strong><span class="kpi-sub" id="m-matched-sub"></span></div>
-        <div class="card kpi"><span class="kpi-label">Drivers used</span><strong class="kpi-value" id="m-drivers">–</strong><span class="kpi-sub" id="m-drivers-sub"></span></div>
-        <div class="card kpi"><span class="kpi-label">Average time difference</span><strong class="kpi-value" id="m-time">–</strong><span class="kpi-sub" id="m-time-sub"></span></div>
-        <div class="card kpi"><span class="kpi-label">Average detour</span><strong class="kpi-value" id="m-detour">–</strong><span class="kpi-sub" id="m-detour-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label">Trips to decide</span><strong class="kpi-value" id="dk-open">0</strong><span class="kpi-sub" id="dk-open-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label">Buses booked</span><strong class="kpi-value" id="dk-buses">0</strong><span class="kpi-sub" id="dk-buses-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label">Trips cancelled</span><strong class="kpi-value" id="dk-cancel">0</strong><span class="kpi-sub" id="dk-cancel-sub"></span></div>
+        <div class="card kpi"><span class="kpi-label">Follow the AI</span><strong class="kpi-value" id="dk-ai">–</strong><span class="kpi-sub" id="dk-ai-sub"></span></div>
       </div>
-
-      <div class="grid-2 carpool-grid">
-        <div class="card map-card">
-          <div class="card-head"><h2>Matches on the map</h2></div>
-          <div id="map" role="img" aria-label="Map of UTP, passengers and drivers"></div>
-          <div class="legend">
-            <span><i class="dot dot-primary"></i>UTP</span>
-            <span><i class="dot dot-accent"></i>Passenger</span>
-            <span><i class="dot dot-green"></i>Driver</span>
-            <span><i class="dot dot-grey"></i>Not offering seats</span>
-          </div>
-        </div>
+      <div class="grid-2 decide-grid">
         <div class="card">
           <div class="card-head">
-            <h2>Matches</h2>
-            <span class="muted small" id="m-rules"></span>
+            <div><h2>Trips</h2><span class="muted small">Click a trip to decide. AI plans for the high end of the forecast.</span></div>
+            <button type="button" class="btn-ghost" id="d-accept-all">Accept AI for the rest</button>
           </div>
           <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>Passenger</th><th>Driver</th><th class="num">Time diff</th><th class="num">Detour</th></tr></thead>
-              <tbody id="m-body"></tbody>
-            </table>
-          </div>
-          <p class="muted small" id="m-unmatched"></p>
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-head">
-            <h2>Passengers needing a ride</h2>
-            <button class="btn-ghost" id="add-p">+ Add</button>
-          </div>
-          <div class="table-wrap">
-            <table class="table edit">
-              <thead><tr><th>ID</th><th>Going to</th><th>Leaves at</th><th></th></tr></thead>
-              <tbody id="p-body"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <h2>Student drivers</h2>
-            <button class="btn-ghost" id="add-d">+ Add</button>
-          </div>
-          <div class="table-wrap">
-            <table class="table edit">
-              <thead><tr><th>ID</th><th>Going to</th><th>Leaves at</th><th>Seats</th><th>Offering</th><th></th></tr></thead>
+            <table class="table decide-table">
+              <thead><tr><th>Departure</th><th>Route</th><th class="num">Booked</th><th class="num">Forecast</th><th>AI suggests</th><th>Decision</th></tr></thead>
               <tbody id="d-body"></tbody>
             </table>
           </div>
         </div>
+        <div class="card" id="d-panel"></div>
+      </div>
+      <div class="card" id="d-carpool" hidden>
+        <div class="card-head">
+          <div><h2 id="d-cp-title">Carpool</h2><span class="muted small" id="d-cp-sub"></span></div>
+          <span class="tags"><span class="tag van">Offered automatically</span></span>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Student</th><th>Getting off at</th><th>Carpool</th><th class="num">Leaves</th><th class="num">Detour</th></tr></thead>
+            <tbody id="d-cp-body"></tbody>
+          </table>
+        </div>
+        <p class="muted small" id="d-cp-note"></p>
       </div>
     </section>
 
@@ -479,6 +463,7 @@
 
     <!-- STUDENT: PLAN MY TRIP -->
     <section class="page" id="page-student" hidden>
+      <div class="card notice" id="sp-alert" hidden></div>
       <div class="filters card">
         <label class="field">
           <span>Break / holiday</span>

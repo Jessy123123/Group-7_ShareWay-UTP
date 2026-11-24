@@ -14,6 +14,8 @@ let profile = null;
 let tripIds = new Map();      // "B|2026-12-15" -> trip id
 let counts = new Map();       // trip id -> seats booked
 let mine = [];                // my active bus bookings
+let decisions = new Map();    // trip id -> PMMD's decision for that trip
+let decisionsReady = false;   // false until schema.sql with trip_decisions has been run
 let error = "";
 const listeners = [];
 
@@ -61,6 +63,21 @@ async function refreshMine() {
   }));
 }
 
+async function loadDecisions() {
+  const { data: rows, error: err } = await client
+    .from("trip_decisions")
+    .select("trip_id, action, buses, standby, note, decided_at");
+  if (err) {
+    decisionsReady = false;
+    console.warn("trip_decisions not available (run supabase/schema.sql again):", err.message);
+    return;
+  }
+  decisionsReady = true;
+  decisions = new Map(rows.map((r) => [Number(r.trip_id), {
+    action: r.action, buses: r.buses, standby: r.standby, note: r.note, decidedAt: r.decided_at,
+  }]));
+}
+
 export const db = {
   /** True when Supabase is set up and reachable. */
   get enabled() { return Boolean(client); },
@@ -82,7 +99,7 @@ export const db = {
       if (err) throw err;
       tripIds = new Map(trips.map((t) => [key(t.route, t.departure_date), t.id]));
       ({ data: { session } } = await client.auth.getSession());
-      await Promise.all([loadProfile(), db.refreshCounts()]);
+      await Promise.all([loadProfile(), db.refreshCounts(), loadDecisions()]);
       client.auth.onAuthStateChange((_event, s) => {
         const userChanged = (s?.user?.id ?? null) !== (session?.user?.id ?? null);
         session = s;
@@ -163,6 +180,56 @@ export const db = {
         name: r.profiles?.full_name || "", email: r.profiles?.email ?? "",
       })),
     };
+  },
+
+  // ---------- PMMD decisions (trip_decisions table) ----------
+
+  get decisionsReady() { return decisionsReady; },
+  decision(route, date) { return decisions.get(db.tripId(route, date)) ?? null; },
+
+  async refreshDecisions() {
+    if (!client) return;
+    await loadDecisions();
+    notify();
+  },
+
+  /** Save one or more decisions: [{route, date, action, buses, standby, note}]. Operators only. */
+  async decide(list) {
+    const rows = [];
+    for (const d of list) {
+      const tripId = db.tripId(d.route, d.date);
+      if (!tripId) return { error: `Route ${d.route} on ${d.date} isn't in the database yet.` };
+      rows.push({
+        trip_id: tripId, action: d.action, buses: d.action === "bus" ? d.buses : 0,
+        standby: d.action === "bus" && d.standby, note: d.note ?? "", decided_at: new Date().toISOString(),
+      });
+    }
+    const { error: err } = await client.from("trip_decisions").upsert(rows, { onConflict: "trip_id" });
+    if (err) return { error: /row-level security/i.test(err.message) ? "Only operator accounts can make decisions." : friendly(err) };
+    await loadDecisions();
+    notify();
+    return {};
+  },
+
+  async undecide(route, date) {
+    const { error: err } = await client.from("trip_decisions").delete().eq("trip_id", db.tripId(route, date));
+    if (err) return { error: friendly(err) };
+    await loadDecisions();
+    notify();
+    return {};
+  },
+
+  /** The students with a seat on one trip (operators only). */
+  async tripBookings(route, date) {
+    const tripId = db.tripId(route, date);
+    if (!client || !tripId) return { rows: [] };
+    const { data: rows, error: err } = await client
+      .from("bookings")
+      .select("id, destination, profiles(full_name, email)")
+      .eq("trip_id", tripId)
+      .eq("status", "booked");
+    if (err) return { rows: [], error: friendly(err) };
+    return { rows: rows.map((r) => ({ id: r.id, destination: r.destination, name: r.profiles?.full_name || "", email: r.profiles?.email ?? "" })) };
   },
 
   async cancel(bookingId) {

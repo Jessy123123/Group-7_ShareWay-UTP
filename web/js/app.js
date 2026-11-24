@@ -10,13 +10,14 @@ import { setupAuth, checkGate } from "./auth.js";
 import { setupChat, setChatView, dockChat } from "./chat.js";
 import { setupHistory, renderHistory } from "./history.js";
 import { setupLive, leaveLive } from "./live.js";
+import { setupDecide, renderDecide, decideFacts } from "./decide.js";
 
 // page id: [title, subtitle, view]
 const PAGES = {
   overview: ["Dashboard", "Demand forecast and vehicle plan for each break", "operator"],
   live: ["Live bookings", "Bookings arrive on their own and the forecast and plan update every day", "operator"],
   forecast: ["What-if forecast", "Type in a trip and see the forecast and the vehicles to book", "operator"],
-  carpool: ["Carpool matching", "Students the buses can't serve, paired with student drivers", "operator"],
+  decide: ["Trip decisions", "Decide the buses for each trip. Cancelled trips get carpools for their students", "operator"],
   emissions: ["CO₂ and cost saved", "A shared trip compared with every student travelling alone", "operator"],
   student: ["Plan my trip home", "University bus, carpool or going alone: compare your options", "student"],
   "student-carpool": ["Carpool", "Find a ride home, or share your spare seats", "student"],
@@ -75,6 +76,7 @@ function showPage(page) {
   setChatView(view);
   dockChat(page === "assistant" ? $("dock-operator") : page === "student-assistant" ? $("dock-student") : null);
   if (page === "history") renderHistory();
+  if (page === "decide") renderDecide();
   document.querySelectorAll(".nav-item").forEach((b) => {
     const on = b.dataset.page === page;
     b.classList.toggle("active", on);
@@ -82,7 +84,6 @@ function showPage(page) {
   });
   $("page-title").textContent = PAGES[page][0];
   $("page-sub").textContent = PAGES[page][1];
-  if (page === "carpool") renderCarpool();
   if (page === "overview") {
     renderRouteMap();
     if (db.enabled) db.refreshCounts().then(() => renderPlan(selectedTrips()));
@@ -267,6 +268,7 @@ function operatorFacts() {
       + `otherwise ${data.config.BUS_CAPACITY}-seat buses, plus a standby bus when the last bus is at least ${Math.round(data.config.STANDBY_FRACTION * 100)}% full. `
       + "Vehicles are planned for the high end of the forecast range.",
   ];
+  if (currentPage === "decide") lines.push(decideFacts());
   return lines.join("\n");
 }
 
@@ -666,169 +668,15 @@ function renderAccuracy() {
   });
 }
 
-// ---------- carpool ----------
+// ---------- towns ----------
 
-const TRAVEL_DAY = [2026, 11, 15]; // 15 Dec 2026, the day before the Sept 2026 sem break (SIMULATED)
+// Every stop on the routes, plus Teluk Intan; used by the student view.
 let towns = {};
-const cp = { passengers: [], drivers: [], nextP: 1, nextD: 1 };
-let map;
-let mapLayer;
 
-function setupCarpool() {
+function setupTowns() {
   for (const r of Object.values(data.config.ROUTES)) Object.assign(towns, r.stops);
   towns["Teluk Intan"] = [4.0259, 101.0213];
   towns = Object.fromEntries(Object.entries(towns).sort((a, b) => a[0].localeCompare(b[0])));
-
-  // Same made-up example as carpool.py's demo() (SIMULATED)
-  const P = [["Kuala Lumpur", "09:00"], ["Kuala Lumpur", "11:00"], ["Kuala Lumpur", "10:00"], ["Teluk Intan", "09:00"], ["Ipoh", "10:00"]];
-  const D = [["Kuala Lumpur", "09:00", 2, true], ["Kuala Lumpur", "14:00", 3, true], ["Kuala Lumpur", "09:00", 3, false], ["Ipoh", "10:00", 1, true]];
-  cp.passengers = P.map(([town, time]) => ({ id: `P${cp.nextP++}`, town, time }));
-  cp.drivers = D.map(([town, time, seats, willing]) => ({ id: `D${cp.nextD++}`, town, time, seats, willing }));
-
-  $("add-p").addEventListener("click", () => {
-    cp.passengers.push({ id: `P${cp.nextP++}`, town: "Kuala Lumpur", time: "09:00" });
-    renderCarpool();
-  });
-  $("add-d").addEventListener("click", () => {
-    cp.drivers.push({ id: `D${cp.nextD++}`, town: "Kuala Lumpur", time: "09:00", seats: 3, willing: true });
-    renderCarpool();
-  });
-  $("m-rules").textContent = `Leave within ${data.config.MAX_TIME_DIFF_HOURS} h, detour up to ${data.config.MAX_DETOUR_KM} km`;
-}
-
-function townSelect(value) {
-  return `<select data-k="town" aria-label="Destination">${Object.keys(towns)
-    .map((t) => `<option${t === value ? " selected" : ""}>${t}</option>`).join("")}</select>`;
-}
-
-function renderEditTables() {
-  $("p-body").innerHTML = cp.passengers.map((p, i) => `
-    <tr data-i="${i}" data-list="passengers">
-      <td><strong>${p.id}</strong></td>
-      <td>${townSelect(p.town)}</td>
-      <td><input type="time" data-k="time" value="${p.time}" aria-label="Departure time"></td>
-      <td><button class="icon-btn" data-remove title="Remove ${p.id}" aria-label="Remove ${p.id}">×</button></td>
-    </tr>`).join("");
-  $("d-body").innerHTML = cp.drivers.map((d, i) => `
-    <tr data-i="${i}" data-list="drivers">
-      <td><strong>${d.id}</strong></td>
-      <td>${townSelect(d.town)}</td>
-      <td><input type="time" data-k="time" value="${d.time}" aria-label="Departure time"></td>
-      <td><input type="number" data-k="seats" min="0" max="6" value="${d.seats}" aria-label="Spare seats"></td>
-      <td><input type="checkbox" data-k="willing" ${d.willing ? "checked" : ""} aria-label="Offering seats"></td>
-      <td><button class="icon-btn" data-remove title="Remove ${d.id}" aria-label="Remove ${d.id}">×</button></td>
-    </tr>`).join("");
-}
-
-function onEditTable(e) {
-  const tr = e.target.closest("tr[data-list]");
-  if (!tr) return;
-  const list = cp[tr.dataset.list];
-  const i = Number(tr.dataset.i);
-  if (e.type === "click" && e.target.closest("[data-remove]")) {
-    list.splice(i, 1);
-    renderCarpool();
-    return;
-  }
-  const k = e.target.dataset.k;
-  if (!k || e.type !== "change") return;
-  list[i][k] = k === "willing" ? e.target.checked : k === "seats" ? Math.max(0, Number(e.target.value) || 0) : e.target.value;
-  renderCarpool(false);
-}
-
-function toMs(time) {
-  const [h, m] = (time || "00:00").split(":").map(Number);
-  return Date.UTC(TRAVEL_DAY[0], TRAVEL_DAY[1], TRAVEL_DAY[2], h, m);
-}
-
-function renderCarpool(rebuildTables = true) {
-  if (rebuildTables) renderEditTables();
-  const passengers = cp.passengers.map((p) => ({
-    passenger_id: p.id, departure_time: toMs(p.time), dest_lat: towns[p.town][0], dest_lon: towns[p.town][1],
-  }));
-  const drivers = cp.drivers.map((d) => ({
-    driver_id: d.id, departure_time: toMs(d.time), dest_lat: towns[d.town][0], dest_lon: towns[d.town][1],
-    spare_seats: d.seats, willing: d.willing,
-  }));
-  const matches = L.match(passengers, drivers);
-  const townOf = (id) => [...cp.passengers, ...cp.drivers].find((x) => x.id === id)?.town;
-
-  replay($("m-body"), "fresh");
-  $("m-body").innerHTML = matches.length ? matches.map((m) => `
-    <tr>
-      <td><strong>${m.passenger_id}</strong> <span class="muted">→ ${townOf(m.passenger_id)}</span></td>
-      <td><strong>${m.driver_id}</strong> <span class="muted">→ ${townOf(m.driver_id)}</span></td>
-      <td class="num">${m.time_diff_hours === 0 ? "same time" : `${round(m.time_diff_hours * 60)} min`}</td>
-      <td class="num">${m.detour_km} km</td>
-    </tr>`).join("") : `<tr><td colspan="4" class="muted">No carpool matches found.</td></tr>`;
-
-  const matchedIds = new Set(matches.map((m) => m.passenger_id));
-  const unmatched = cp.passengers.filter((p) => !matchedIds.has(p.id));
-  $("m-unmatched").textContent = unmatched.length
-    ? `Not matched: ${unmatched.map((p) => `${p.id} (${p.town})`).join(", ")}. They need a bus, a van or another driver.`
-    : cp.passengers.length ? "Everyone has a ride." : "";
-
-  const offering = cp.drivers.filter((d) => d.willing && d.seats > 0);
-  const used = new Set(matches.map((m) => m.driver_id));
-  const seats = offering.reduce((s, d) => s + d.seats, 0);
-  const avg = (k) => matches.reduce((s, m) => s + m[k], 0) / matches.length;
-  $("m-matched").textContent = `${matches.length}/${cp.passengers.length}`;
-  $("m-matched-sub").textContent = `${unmatched.length} still need a ride`;
-  $("m-drivers").textContent = `${used.size}/${offering.length}`;
-  $("m-drivers-sub").textContent = `${seats - matches.length} of ${seats} seats still free`;
-  $("m-time").textContent = matches.length ? `${round(avg("time_diff_hours") * 60)} min` : "–";
-  $("m-time-sub").textContent = "between passenger and driver";
-  $("m-detour").textContent = matches.length ? `${round(avg("detour_km"), 1)} km` : "–";
-  $("m-detour-sub").textContent = "extra driving per passenger";
-
-  if (currentPage === "carpool") renderMap(matches);
-}
-
-function renderMap(matches) {
-  const Lf = window.L; // Leaflet (the logic module is the local "L")
-  if (!Lf) return;
-  if (!map) {
-    map = Lf.map("map", { scrollWheelZoom: false, attributionControl: true });
-    Lf.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 12,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
-    mapLayer = Lf.layerGroup().addTo(map);
-  }
-  map.invalidateSize();
-  mapLayer.clearLayers();
-
-  const utp = data.config.UTP;
-  const pts = [utp];
-  for (const m of matches) {
-    const p = towns[cp.passengers.find((x) => x.id === m.passenger_id).town];
-    const d = towns[cp.drivers.find((x) => x.id === m.driver_id).town];
-    Lf.polyline([utp, p, d], { color: COLORS.primary, weight: 2.5, opacity: 0.8, className: "route-line" }).addTo(mapLayer);
-  }
-
-  const byTown = {};
-  for (const p of cp.passengers) (byTown[p.town] ??= { p: [], d: [] }).p.push(p);
-  for (const d of cp.drivers) (byTown[d.town] ??= { p: [], d: [] }).d.push(d);
-  for (const [town, who] of Object.entries(byTown)) {
-    const [lat, lon] = towns[town];
-    pts.push([lat, lon]);
-    if (who.p.length) {
-      Lf.circleMarker([lat, lon - 0.05], { radius: 6 + who.p.length, color: "#fff", weight: 2, fillColor: COLORS.accent, fillOpacity: 1 })
-        .bindTooltip(`<div class="map-pin"><strong>${town}</strong><br>Passengers: ${who.p.map((x) => x.id).join(", ")}</div>`)
-        .addTo(mapLayer);
-    }
-    if (who.d.length) {
-      const active = who.d.some((x) => x.willing && x.seats > 0);
-      Lf.circleMarker([lat, lon + 0.05], { radius: 6 + who.d.length, color: "#fff", weight: 2, fillColor: active ? COLORS.green : COLORS.grey, fillOpacity: 1 })
-        .bindTooltip(`<div class="map-pin"><strong>${town}</strong><br>Drivers: ${who.d
-          .map((x) => `${x.id}${x.willing ? ` (${x.seats} seats)` : " (not offering)"}`).join(", ")}</div>`)
-        .addTo(mapLayer);
-    }
-  }
-  Lf.circleMarker(utp, { radius: 9, color: "#fff", weight: 3, fillColor: COLORS.primary, fillOpacity: 1 })
-    .bindTooltip('<div class="map-pin"><strong>UTP</strong><br>Everyone starts here</div>')
-    .addTo(mapLayer);
-  map.fitBounds(pts, { padding: [30, 30], maxZoom: 9 });
 }
 
 // ---------- emissions ----------
@@ -962,20 +810,16 @@ async function init() {
   setupOverview();
   setupRoutes();
   setupForecast();
-  setupCarpool();
+  setupTowns();
   setupEmissions();
-  $("p-body").addEventListener("change", onEditTable);
-  $("d-body").addEventListener("change", onEditTable);
-  $("p-body").addEventListener("click", onEditTable);
-  $("d-body").addEventListener("click", onEditTable);
 
   renderOverview();
   renderForecast();
   renderEmissions();
-  renderCarpool();
   setupStudent({ data, L, events, towns });
   setupLive({ data, L, events });
   setupHistory({ data });
+  setupDecide({ data, L, events });
   showPage(location.hash.slice(1) || HOME[savedView()]);
 
   // Real logins and bookings (Supabase). Runs in the background; without a key
@@ -992,6 +836,7 @@ async function init() {
   db.init().then(() => {
     refreshStudent();
     renderPlan(selectedTrips());
+    if (currentPage === "decide") renderDecide();
     gate();
   });
 }

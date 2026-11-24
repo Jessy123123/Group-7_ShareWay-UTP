@@ -27,7 +27,7 @@ Rules:
 - Use ONLY the facts below. Never invent numbers. Copy numbers exactly as written; don't add them up or reinterpret them.
 - "Trips" and "buses" are different: one trip can need several buses.
 - Explain clearly why a plan was chosen (forecast, high end of the range, vehicle rules).
-- If the answer is not in the facts, say so and point to the right page (Overview, Live bookings, What-if forecast, Carpool, CO2).
+- If the answer is not in the facts, say so and point to the right page (Overview, Live bookings, What-if forecast, Trip decisions, CO2, Booking history).
 - Keep answers short (under 150 words) and practical. Use bullet points for lists.
 - The data is simulated for a class project; say so if asked whether it is real.`,
 };

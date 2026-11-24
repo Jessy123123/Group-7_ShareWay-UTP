@@ -7,6 +7,10 @@
 --   profiles  one row per signed-up student (UTP email only), role student/operator
 --   trips     every bus trip in the break calendar (route + departure date)
 --   bookings  a student's seat on a trip (booked / cancelled)
+--   trip_decisions  what PMMD decided for a trip: cancel, one van or N buses
+--
+-- Safe to run again after an update (e.g. to add trip_decisions): it only
+-- creates what is missing and replaces the functions and rules.
 --
 -- Security (row level security): students only ever see their OWN bookings.
 -- Everyone can see how many seats are booked per trip, but not who booked them.
@@ -45,6 +49,19 @@ create table if not exists public.bookings (
 create unique index if not exists one_active_booking
   on public.bookings (trip_id, student_id) where status = 'booked';
 create index if not exists bookings_by_trip on public.bookings (trip_id);
+
+-- The operator's decision for a trip (Decide page). No row = not decided yet,
+-- and the website shows the AI suggestion instead. When a trip is cancelled,
+-- its students are offered a carpool on the website.
+create table if not exists public.trip_decisions (
+  trip_id bigint primary key references public.trips (id) on delete cascade,
+  action text not null check (action in ('cancel', 'van', 'bus')),
+  buses integer not null default 0 check (buses between 0 and 20),
+  standby boolean not null default false,
+  note text not null default '',
+  decided_by uuid default auth.uid() references public.profiles (id) on delete set null,
+  decided_at timestamptz not null default now()
+);
 
 -- ---------- helpers ----------
 
@@ -88,6 +105,17 @@ create trigger on_auth_user_created
 alter table public.profiles enable row level security;
 alter table public.trips enable row level security;
 alter table public.bookings enable row level security;
+alter table public.trip_decisions enable row level security;
+
+-- Everyone can see what PMMD decided (students need to know if their bus is
+-- cancelled); only operators can make or change a decision.
+drop policy if exists "decisions are public" on public.trip_decisions;
+create policy "decisions are public" on public.trip_decisions
+  for select to anon, authenticated using (true);
+
+drop policy if exists "operators decide" on public.trip_decisions;
+create policy "operators decide" on public.trip_decisions
+  for all to authenticated using (public.is_operator()) with check (public.is_operator());
 
 drop policy if exists "read own profile" on public.profiles;
 create policy "read own profile" on public.profiles
@@ -116,6 +144,9 @@ create policy "book a seat for yourself" on public.bookings
     student_id = auth.uid()
     and status = 'booked'
     and exists (select 1 from public.trips t where t.id = trip_id and t.departure_date >= current_date)
+    -- no new seats on a trip PMMD has cancelled
+    and not exists (select 1 from public.trip_decisions d
+                    where d.trip_id = bookings.trip_id and d.action = 'cancel')
   );
 
 drop policy if exists "cancel own booking" on public.bookings;

@@ -196,7 +196,7 @@ Ollama must be running (`ollama serve`, or the Ollama app). Pages on `localhost`
 | Overview           | Forecast vs actual for each trip of a break, the likely range, the booking curve and the vehicle plan                                                                                            |
 | Live bookings      | One trip replayed day by day from 28 days before departure. Bookings arrive on their own and the forecast and vehicle plan update automatically, as the full system would run with no data entry |
 | What-if forecast   | Try any route, date and number of bookings and see the forecast and plan. Also shows how accurate each model is                                                                                  |
-| Carpool matching   | Edit passengers and drivers and see the matches on a map                                                                                                                                         |
+| Trip decisions     | PMMD decides each trip: N buses (+ standby), one van or cancel, starting from the AI suggestion. Cancelling a trip offers its students a carpool automatically, and students see it on Plan trip and My trips. Saved in Supabase (`trip_decisions`, run `supabase/schema.sql` again) or, in demo mode, in the browser |
 | CO₂ and cost saved | A shared trip compared with every student driving alone or using e-hailing                                                                                                                       |
 | Booking history    | Every real seat booked and cancelled (Supabase): filters, charts by day, route, booking lead time and stop, and a CSV download |
 | Ask AI             | Full-page AI assistant (Ollama) that explains the forecast, range and vehicle plan |

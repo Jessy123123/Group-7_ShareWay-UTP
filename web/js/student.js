@@ -12,6 +12,7 @@ import {
 } from "./ui.js";
 import { db } from "./db.js";
 import { openAuth } from "./auth.js";
+import { getDecision, onDecisions } from "./decisions.js";
 
 let data;
 let L;
@@ -20,6 +21,9 @@ let towns;
 
 const RUN = 0; // simulation run shown to students
 const STORE = "shareway.trips.v1";
+// Bookings don't store a time, so a cancelled bus's students are matched with
+// drivers leaving around the time the bus would have left (ASSUMPTION).
+export const BUS_TIME = "09:00";
 const st = { eventKey: null, town: "Kuala Lumpur", date: null, time: "09:00", role: "rider", seats: 3 };
 let myTrips = [];
 
@@ -148,16 +152,41 @@ const asRider = (p, date) => ({
   passenger_id: p.id, departure_time: toMs(date, clock(p.minute)), dest_lat: towns[p.town][0], dest_lon: towns[p.town][1],
 });
 
-/** Every driver who could take me, best first (carpool.py rules, one driver at a time). */
-function driversForMe() {
-  const me = asRider({ id: "YOU", town: st.town, minute: toMin(st.time) }, st.date);
+/** Every driver who could take a student to `town` leaving around `time`,
+ * best first (carpool.py rules, one driver at a time). */
+function driversFor(date, town, time) {
+  if (!towns[town]) return [];
+  const me = asRider({ id: "YOU", town, minute: toMin(time) }, date);
   const found = [];
-  for (const d of pool(st.date).drivers) {
-    const m = L.match([me], [asDriver(d, st.date)]);
+  for (const d of pool(date).drivers) {
+    const m = L.match([me], [asDriver(d, date)]);
     if (m.length) found.push({ driver: d, ...m[0] });
   }
   return found.sort((a, b) => a.time_diff_hours - b.time_diff_hours || a.detour_km - b.detour_km);
 }
+
+const driversForMe = () => driversFor(st.date, st.town, st.time);
+
+/**
+ * PMMD cancelled a trip: offer each of its students a carpool seat with the
+ * SIMULATED drivers leaving that day (carpool.py match(): best pairs first,
+ * each driver's spare seats shared out). riders: [{id, town}], all leaving
+ * around BUS_TIME. Returns [{rider, match: {driver, time_diff_hours, detour_km} | null}].
+ */
+export function offerCarpools(date, riders) {
+  const drivers = pool(date).drivers;
+  const known = riders.filter((r) => towns[r.town]);
+  const matches = L.match(
+    known.map((r) => asRider({ id: r.id, town: r.town, minute: toMin(BUS_TIME) }, date)),
+    drivers.map((d) => asDriver(d, date)),
+  );
+  return riders.map((r) => {
+    const m = matches.find((x) => x.passenger_id === r.id);
+    return { rider: r, match: m ? { ...m, driver: drivers.find((d) => d.id === m.driver_id) } : null };
+  });
+}
+
+export { clock };
 
 /** Riders I could take as a driver, using match() with me as the only driver. */
 function ridersForMe() {
@@ -167,8 +196,8 @@ function ridersForMe() {
     .map((m) => ({ rider: riders.find((r) => r.id === m.passenger_id), ...m }));
 }
 
-function riderCost(detour) {
-  return L.co2Saved(1, directKm(st.town), "carpool", "car", detour);
+function riderCost(detour, town = st.town) {
+  return L.co2Saved(1, directKm(town), "carpool", "car", detour);
 }
 
 // ---------- options for one trip ----------
@@ -203,7 +232,9 @@ function findTrip(route, date) {
 function busNumbers(route, town, trip) {
   const { left, snap } = snapshotNow(trip);
   const expected = Math.max(1, Math.round(snap[2]));
-  const rec = L.recommend(snap[4]);   // vehicles are planned for the high end of the forecast range
+  // PMMD's decision if there is one, otherwise the AI plan (high end of the forecast range)
+  const decided = getDecision(route, trip.date);
+  const rec = decided ? { action: decided.action, buses: decided.buses, standby: decided.standby } : L.recommend(snap[4]);
   const vehicle = rec.action === "van" ? "van" : "bus";
   const capacity = rec.action === "bus" ? rec.buses * data.config.BUS_CAPACITY
     : rec.action === "van" ? data.config.VAN_CAPACITY : 0;
@@ -213,7 +244,7 @@ function busNumbers(route, town, trip) {
   const sharedKgEach = L.co2Saved(expected, km, vehicle).shared_kg / expected;
   const alone = L.co2Saved(1, directKm(town), "bus", "car");
   return {
-    left, snap, expected, rec, capacity, vehicle,
+    left, snap, expected, rec, decided, capacity, vehicle,
     fare, savedRm: alone.solo_rm - fare, savedKg: alone.solo_kg - sharedKgEach,
   };
 }
@@ -266,6 +297,8 @@ function pickDefaultDate() {
 function dayStatus(route, date) {
   const trip = route && tripFor(st.eventKey, route, date);
   if (!trip) return "no bus";
+  const decided = getDecision(route, date);
+  if (decided) return decided.action === "cancel" ? "cancelled by PMMD" : `${decided.action} (confirmed)`;
   const rec = L.recommend(snapshotNow(trip).snap[4]);   // planned for the high end
   return rec.action === "cancel" ? "bus may be cancelled" : rec.action === "van" ? "van" : "bus";
 }
@@ -291,12 +324,12 @@ function renderPlan() {
   const best = offers[0];
   $("sk-best").textContent = best ? (best[0] === "Carpool" ? "Carpool" : bus.vehicle === "van" ? "Van" : "Bus") : "Alone";
   $("sk-best-sub").textContent = best
-    ? (best[0] === "Carpool" ? `with driver ${car.best.driver.id}, your share ${rm(car.fare)}` : `${planText(bus.rec)} on Route ${bus.route}`)
+    ? (best[0] === "Carpool" ? `with driver ${car.best.driver.id}, your share ${rm(car.fare)}` : `${planText(bus.rec, bus.decided)} on Route ${bus.route}`)
     : "No shared option yet for this trip";
 
   if (bus.trip) {
     $("sk-seats").textContent = bus.capacity ? `${bus.booked}/${bus.capacity}` : `${bus.booked}`;
-    $("sk-seats-sub").textContent = bus.available ? planText(bus.rec) : "Likely to be cancelled";
+    $("sk-seats-sub").textContent = bus.available ? planText(bus.rec, bus.decided) : bus.decided ? "Cancelled by PMMD" : "Likely to be cancelled";
   } else {
     $("sk-seats").textContent = "–";
     $("sk-seats-sub").textContent = bus.route ? "No bus on this day" : "Not on a bus route";
@@ -307,15 +340,30 @@ function renderPlan() {
   countUp($("sk-co2"), co2, kg);
   $("sk-co2-sub").textContent = "compared with driving alone";
 
+  renderCancelAlert();
   renderBusCard(bus, best?.[0] === "University bus");
   renderCarpoolCard(car, best?.[0] === "Carpool");
   renderDemand(bus);
   renderCost(bus, car, alone, grab);
 }
 
-function planText(rec) {
-  if (rec.action === "van") return "1 van planned";
-  return `${rec.buses} bus${rec.buses > 1 ? "es" : ""} planned${rec.standby ? " + standby" : ""}`;
+/** Banner on the Plan page when PMMD cancelled a bus the student booked. */
+function renderCancelAlert() {
+  const el = $("sp-alert");
+  const hit = allTrips().map((t) => ({ t, off: cancelOffer(t) })).find((x) => x.off && !x.off.requested);
+  el.hidden = !hit;
+  if (!hit) return;
+  const { t, off } = hit;
+  el.innerHTML = `<div><strong>PMMD cancelled your bus on ${dayName(t.date)} ${fmtDate(t.date)} (${esc(t.town)}).</strong>
+    <span>${off.best ? `A carpool is ready for you: driver ${off.best.driver.id} leaves at ${clock(off.best.driver.minute)}.`
+      : "No carpool driver yet. Try another time on the Carpool page."}</span></div>
+    <button class="btn" data-go-trips>See my trips</button>`;
+}
+
+function planText(rec, decided = null) {
+  const word = decided ? "confirmed" : "planned";
+  if (rec.action === "van") return `1 van ${word}`;
+  return `${rec.buses} bus${rec.buses > 1 ? "es" : ""} ${word}${rec.standby ? " + standby" : ""}`;
 }
 
 function kvTable(rows) {
@@ -338,13 +386,17 @@ function renderBusCard(bus, isBest) {
     return;
   }
   if (!bus.available) {
-    el.innerHTML = cardHead(title, '<span class="tag cancel">Likely cancelled</span>')
+    const byPmmd = Boolean(bus.decided);
+    el.innerHTML = cardHead(title, `<span class="tag cancel">${byPmmd ? "Cancelled by PMMD" : "Likely cancelled"}</span>`)
       + kvTable([
         ["Route", routeText],
         ["Booked so far", bus.booked],
         ["Expected to travel", `about ${bus.expected}`],
       ])
-      + `<p class="muted small card-note">Trips with fewer than ${data.config.MIN_PASSENGERS} students are cancelled and the students are offered carpools.</p>`
+      + (byPmmd
+        ? `<p class="muted small card-note">PMMD cancelled this trip${bus.decided.note ? ` (${esc(bus.decided.note)})` : ""}. `
+          + `${bus.mineBooked ? "Your seat is cancelled and a carpool has been found for you: see the Carpool card." : "Students who booked it are offered a carpool automatically."}</p>`
+        : `<p class="muted small card-note">Trips with fewer than ${data.config.MIN_PASSENGERS} students are cancelled and the students are offered carpools.</p>`)
       + '<div class="card-actions"><button class="btn-ghost" data-act="go-carpool">Find a carpool instead</button></div>';
     return;
   }
@@ -353,7 +405,7 @@ function renderBusCard(bus, isBest) {
   const button = db.enabled && !db.user
     ? '<button class="btn" data-act="sign-in">Sign in to book</button>'
     : `<button class="btn" data-act="book-bus" ${booked ? "disabled" : ""}>${booked ? "Seat booked ✓" : "Book a seat"}</button>`;
-  el.innerHTML = cardHead(title, `${isBest ? '<span class="tag van">Recommended</span> ' : ""}<span class="tag ${bus.rec.action}">${planText(bus.rec)}</span>`)
+  el.innerHTML = cardHead(title, `${isBest ? '<span class="tag van">Recommended</span> ' : ""}<span class="tag ${bus.rec.action}">${planText(bus.rec, bus.decided)}</span>`)
     + kvTable([
       ["Route", routeText],
       ["Seats booked so far", `<span class="bar"><i style="width:${pct}%"></i></span>${bus.booked} of ${bus.capacity}`],
@@ -600,6 +652,7 @@ function renderStudentMap(lines) {
 
 async function act(what, btn) {
   if (what === "go-carpool") { location.hash = "student-carpool"; return; }
+  if (what === "go-trips") { location.hash = "student-trips"; return; }
   if (what === "sign-in") { openAuth("student"); return; }
 
   if (what === "book-bus" && db.enabled) {
@@ -615,7 +668,7 @@ async function act(what, btn) {
   if (what === "book-bus") {
     const bus = busOption();
     addTrip({
-      key: bus.key, kind: bus.vehicle, date: st.date, time: st.time, town: st.town,
+      key: bus.key, kind: bus.vehicle, route: bus.route, date: st.date, time: st.time, town: st.town,
       title: `University ${bus.vehicle} to ${st.town}`, detail: `Route ${bus.route}`, status: "Seat booked",
       paid: null, rm: null, kg: bus.savedKg,   // no fare for the university bus/van
     });
@@ -659,7 +712,17 @@ async function act(what, btn) {
 
 // ---------- My trips ----------
 
-const STATUS_TAG = { "Seat booked": "bus", Requested: "standby", "Ride posted": "van" };
+const STATUS_TAG = { "Seat booked": "bus", Requested: "standby", "Ride posted": "van", "Cancelled by PMMD": "cancel" };
+
+/** If PMMD cancelled this bus trip: the carpool offered instead (best driver
+ * leaving around the bus time) and whether the student has taken it. */
+function cancelOffer(t) {
+  if (t.kind !== "bus" && t.kind !== "van") return null;
+  const route = t.route ?? routeOf(t.town);
+  if (getDecision(route, t.date)?.action !== "cancel") return null;
+  const best = driversFor(t.date, t.town, BUS_TIME)[0] ?? null;
+  return { best, requested: Boolean(best) && hasTrip(`ride|${t.date}|${best.driver.id}`) };
+}
 
 /** Bus seats saved in Supabase, shaped like the local trips. */
 function liveTrips() {
@@ -667,7 +730,7 @@ function liveTrips() {
     const trip = findTrip(b.route, b.date);
     const n = trip ? busNumbers(b.route, b.destination, trip) : { vehicle: "bus", fare: 0, savedRm: 0, savedKg: 0 };
     return {
-      id: `db-${b.id}`, dbId: b.id, kind: n.vehicle, date: b.date, time: "–", town: b.destination,
+      id: `db-${b.id}`, dbId: b.id, kind: n.vehicle, route: b.route, date: b.date, time: "–", town: b.destination,
       title: `University ${n.vehicle} to ${b.destination}`, detail: `Route ${b.route} · saved to your account`,
       status: "Seat booked", paid: null, rm: null, kg: n.savedKg,   // no fare for the university bus/van
     };
@@ -685,24 +748,33 @@ function renderMyTrips() {
   $("mt-note").textContent = !db.enabled ? "Saved in this browser only (demo, no real booking)"
     : "Bus seats are saved to your account · carpools are still a demo in this browser";
   const sorted = [...allTrips()].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-  countUp($("mt-count"), sorted.length);
-  $("mt-count-sub").textContent = sorted.length ? `next: ${dayName(sorted[0].date)} ${fmtDate(sorted[0].date)}` : "nothing booked yet";
-  countUp($("mt-rm"), sorted.reduce((s, t) => s + Math.max(0, t.rm ?? 0), 0), rm);
-  countUp($("mt-kg"), sorted.reduce((s, t) => s + Math.max(0, t.kg), 0), kg);
+  const offers = new Map(sorted.map((t) => [t.id, cancelOffer(t)]));
+  const running = sorted.filter((t) => !offers.get(t.id));   // a cancelled bus saves nothing
+  countUp($("mt-count"), running.length);
+  $("mt-count-sub").textContent = running.length ? `next: ${dayName(running[0].date)} ${fmtDate(running[0].date)}` : "nothing booked yet";
+  countUp($("mt-rm"), running.reduce((s, t) => s + Math.max(0, t.rm ?? 0), 0), rm);
+  countUp($("mt-kg"), running.reduce((s, t) => s + Math.max(0, t.kg), 0), kg);
 
   const body = $("mt-body");
   replay(body, "fresh");
   body.innerHTML = sorted.length ? sorted.map((t) => {
-    const status = t.status ?? (t.kind === "carpool" ? "Requested" : t.kind === "offer" ? "Ride posted" : "Seat booked");
-    return `<tr>
+    const off = offers.get(t.id);
+    const status = off ? "Cancelled by PMMD" : t.status ?? (t.kind === "carpool" ? "Requested" : t.kind === "offer" ? "Ride posted" : "Seat booked");
+    const detail = !off ? esc(t.detail)
+      : off.best ? `Carpool offered: driver ${off.best.driver.id}, leaves ${clock(off.best.driver.minute)}${off.best.detour_km > 0 ? `, +${off.best.detour_km} km` : ""}`
+      : "No carpool driver yet: try the Carpool page";
+    const take = off?.best
+      ? `<button class="btn-ghost" data-ride="${t.date}|${esc(t.town)}|${off.best.driver.id}" ${off.requested ? "disabled" : ""}>${off.requested ? "Carpool requested ✓" : "Take carpool"}</button> `
+      : "";
+    return `<tr${off ? ' class="row-cancelled"' : ""}>
       <td>${dayName(t.date)} ${fmtDate(t.date, true)}</td>
-      <td><strong>${esc(t.title)}</strong> <span class="muted small">${esc(t.detail)}</span></td>
+      <td><strong>${esc(t.title)}</strong> <span class="muted small">${detail}</span></td>
       <td>${t.time}</td>
       <td><span class="tag ${STATUS_TAG[status] ?? "bus"}">${status}</span></td>
       <td class="num">${t.paid == null ? '<span class="muted" title="No fare for the university bus/van">–</span>' : rm(Math.max(0, t.paid))}</td>
       <td class="num good">${t.rm == null ? '<span class="muted">–</span>' : rm(Math.max(0, t.rm))}</td>
-      <td class="num good">${kg(Math.max(0, t.kg))}</td>
-      <td class="num"><button class="icon-btn" data-remove="${t.id}" title="Cancel" aria-label="Cancel ${esc(t.title)}">×</button></td>
+      <td class="num good">${off ? '<span class="muted">–</span>' : kg(Math.max(0, t.kg))}</td>
+      <td class="num">${take}<button class="icon-btn" data-remove="${t.id}" title="Cancel" aria-label="Cancel ${esc(t.title)}">×</button></td>
     </tr>`;
   }).join("") : `<tr><td colspan="8"><div class="empty"><strong>No trips yet</strong>
       <span>Plan your trip home to book a bus seat or a carpool.</span>
@@ -710,7 +782,25 @@ function renderMyTrips() {
 }
 
 function setupMyTrips() {
+  $("sp-alert").addEventListener("click", (e) => {
+    if (e.target.closest("[data-go-trips]")) location.hash = "student-trips";
+  });
   $("mt-body").addEventListener("click", async (e) => {
+    const ride = e.target.closest("[data-ride]");
+    if (ride) {
+      const [date, town, driverId] = ride.dataset.ride.split("|");
+      const f = driversFor(date, town, BUS_TIME).find((x) => x.driver.id === driverId);
+      if (!f) return;
+      const cost = riderCost(f.detour_km, town);
+      addTrip({
+        key: `ride|${date}|${f.driver.id}`, kind: "carpool", date, time: clock(f.driver.minute), town,
+        title: `Carpool to ${town}`, detail: `Driver ${f.driver.id} · instead of the cancelled bus`, status: "Requested",
+        paid: cost.shared_rm, rm: cost.rm_saved, kg: cost.kg_co2,
+      });
+      toast(`Carpool requested with driver ${f.driver.id}, leaving ${clock(f.driver.minute)}`);
+      renderMyTrips();
+      return;
+    }
     const remove = e.target.closest("[data-remove]");
     if (remove && remove.dataset.remove.startsWith("db-")) {
       remove.disabled = true;
@@ -740,6 +830,7 @@ export function setupStudent(ctx) {
   setupCarpoolPage();
   setupMyTrips();
   db.onChange(refreshStudent);
+  onDecisions(refreshStudent);
 }
 
 /** What the student is looking at right now, as plain text for the AI assistant. */
@@ -754,11 +845,14 @@ export function studentFacts() {
     `Break: ${ev.event}, first day ${ev.firstDay}. The student is going home to ${st.town}, leaving on ${dayName(st.date)} ${st.date} around ${st.time}.`,
   ];
   if (!bus.trip) lines.push(`University bus: not available. ${bus.why}`);
-  else if (!bus.available) {
+  else if (!bus.available && bus.decided) {
+    lines.push(`University bus on Route ${bus.route}: CANCELLED by PMMD (the transport operator)${bus.decided.note ? `, reason: ${bus.decided.note}` : ""}. `
+      + `Students who booked it are offered a carpool automatically (shown on My trips). ${bus.booked} had booked.`);
+  } else if (!bus.available) {
     lines.push(`University ${bus.vehicle} on Route ${bus.route}: likely to be CANCELLED, only about ${bus.expected} students expected `
       + `(trips under ${data.config.MIN_PASSENGERS} are cancelled and students are offered carpools). ${bus.booked} booked so far.`);
   } else {
-    lines.push(`University ${bus.vehicle} on Route ${bus.route} (${data.config.ROUTES[bus.route].name}): ${planText(bus.rec)}, `
+    lines.push(`University ${bus.vehicle} on Route ${bus.route} (${data.config.ROUTES[bus.route].name}): ${planText(bus.rec, bus.decided)}${bus.decided ? " by PMMD" : ""}, `
       + `${bus.booked} of ${bus.capacity} seats booked so far, about ${bus.expected} students expected to travel, ${bus.left} days before departure. `
       + `No fare is shown for the university bus/van. CO2 saved vs driving alone: ${bus.savedKg.toFixed(1)} kg.`
       + (bus.mineBooked ? " The student HAS BOOKED a seat on it." : " The student has not booked it yet."));
