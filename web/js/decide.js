@@ -175,10 +175,6 @@ function renderKpis(rows) {
   countUp($("dk-cancel"), cancelled.length);
   const moved = cancelled.reduce((s, x) => s + x.booked, 0);
   $("dk-cancel-sub").textContent = cancelled.length ? `${moved} student${moved === 1 ? "" : "s"} offered a carpool` : "no trips cancelled";
-  const ai = rows.filter((x) => x.decided && sameAsAi(x.decided, x.ai)).length;
-  const decidedN = rows.length - open.length;
-  $("dk-ai").textContent = decidedN ? `${Math.round((100 * ai) / decidedN)}%` : "–";
-  $("dk-ai-sub").textContent = decidedN ? `${ai} of ${decidedN} decisions follow the AI` : "no decisions yet";
 }
 
 function statusTag(x) {
