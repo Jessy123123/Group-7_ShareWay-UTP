@@ -66,7 +66,7 @@ bookings so far ──► predict_range() ──► low / forecast / high
 | ---- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | `analyze_survey.py` | Turns survey responses into the `SURVEY` values in `config.py` and saves charts to `outputs/survey/`                                                                                                |
 | 1    | `simulate.py`       | Generates past bookings for every break, route and departure day, recorded at 28, 21, 14, 10, 7, 5, 3 and 1 days before departure                                                                   |
-| 2    | `train.py`          | **AI step.** Learns a correction to a booking-curve estimate (bookings so far ÷ usual share booked by that day). Compares Linear Regression, Random Forest and Gradient Boosting and keeps the best |
+| 2    | `train.py`          | **AI step.** Learns a correction to a booking-curve estimate (bookings so far ÷ usual share booked by that day). Compares Linear Regression, Random Forest and Gradient Boosting and keeps the one with the lowest 5-fold cross-validation error on the training trips |
 | 3    | `train.py`          | **AI step.** Forecast range: the 10th–90th percentile of the model's errors on unseen trips. Vehicles are planned for the high end                                                                  |
 | 4    | `decide.py`         | Vehicle rules: cancel below 5, a van for 5–10, buses above 10, a standby bus if the last bus is at least 90% full                                                                                   |
 | 5    | `carpool.py`        | Matches passengers with student drivers at most 3 h apart and with at most 30 km of detour; best pairs first (time, then detour)                                                                    |
@@ -76,7 +76,7 @@ bookings so far ──► predict_range() ──► low / forecast / high
 
 ## Results (simulated data)
 
-The models were tested on 207 simulated trips they had not seen during training. The average trip had 124 passengers.
+The simulated trips were split 80/20 by trip: 828 for training, 207 for testing. The model was chosen with 5-fold cross-validation on the 828 training trips only (average error: Gradient Boosting 7.11, Random Forest 7.58, Linear Regression 19.39), so the 207 test trips were used once, for the final scores below. The average trip had 124 passengers.
 
 | Approach                         | Average error (passengers) | Trips planned with too few seats |
 | -------------------------------- | -------------------------: | -------------------------------: |

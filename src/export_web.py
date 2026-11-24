@@ -114,12 +114,15 @@ def model_accuracy(df):
     overall = {name: round(mean_absolute_error(test_df[C.TARGET], predictions[name]), 2)
                for name in predictions.columns}
     by_snapshot = T.mae_by_snapshot(test_df, predictions).round(2)
-    best = T.load_model()["name"]
+    saved = T.load_model()
+    best = saved["name"]
     # forecast range: errors measured on the training trips, checked on the test trips
     low, high = T.apply_margins(T.fit_margins(best, train_df), test_df["days_before"], predictions[best])
     rng = T.range_report(test_df, predictions[best], low, high)
     return {
         "best_model": best,
+        # how the model was chosen: 5-fold cross-validation on the training trips only
+        "cv_mae": saved.get("cv_mae", {}),
         "range": {"levels": [C.RANGE_LOW, C.RANGE_HIGH], **{k: (round(v, 1) if isinstance(v, float) else v)
                                                          for k, v in rng.items()}},
         "overall": overall,

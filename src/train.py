@@ -13,7 +13,10 @@ final number directly can only repeat numbers it saw in training, so it
 mostly ignores bookings that are unusually high or low. Predicting the
 correction keeps the forecast tied to the real bookings.
 
-Approaches compared on trips the model has not seen:
+The model is CHOSEN with 5-fold cross-validation on the training trips only,
+then every approach is scored once on the test trips (not used for the choice).
+
+Approaches compared:
   - Baseline
   - Linear Regression  (baseline x learned correction)
   - Random Forest      (baseline x learned correction)
@@ -219,6 +222,21 @@ def range_report(test, forecast, low, high):
     }
 
 
+def choose_model(train):
+    """Pick the best model with cross-validation on the TRAINING trips only
+    (folds split by trip), so the test trips are used just once, for the final
+    score. Returns (best name, average error of every model across the folds)."""
+    folds = GroupKFold(n_splits=C.MARGIN_FOLDS)
+    errors = {name: [] for name in make_models()}
+    for fit_idx, val_idx in folds.split(train, groups=train["trip_id"]):
+        fit_rows, val_rows = train.iloc[fit_idx], train.iloc[val_idx]
+        for name in errors:
+            forecast = predict_rows(fit_bundle(name, fit_rows), val_rows)
+            errors[name].append(mean_absolute_error(val_rows[C.TARGET], forecast))
+    cv_mae = pd.Series({name: float(np.mean(e)) for name, e in errors.items()})
+    return cv_mae.idxmin(), cv_mae
+
+
 def evaluate(train, test):
     """Predict the test trips with every approach. Returns one column per approach."""
     predictions = pd.DataFrame(index=test.index)
@@ -275,6 +293,13 @@ def train():
     print(
         f"Training trips: {train_df.trip_id.nunique()}, test trips: {test_df.trip_id.nunique()}")
 
+    # Choose the model with cross-validation on the training trips only
+    best_name, cv_mae = choose_model(train_df)
+    print(f"\nModel choice ({C.MARGIN_FOLDS}-fold cross-validation on the training trips, MAE):")
+    print(cv_mae.round(2).to_string())
+    print(f"Chosen: {best_name}")
+
+    # Test trips: used once, for the final scores
     predictions = evaluate(train_df, test_df)
     overall = pd.Series({name: mean_absolute_error(test_df[C.TARGET], predictions[name])
                          for name in predictions.columns})
@@ -289,9 +314,6 @@ def train():
     print("\nTrips planned with too few seats (%), all snapshots:")
     print(short_trips(test_df, predictions).round(1).to_string())
     save_chart(by_snapshot)
-
-    # Keep the best machine learning model
-    best_name = overall.drop(BASELINE).idxmin()
 
     # Forecast range: errors measured on the training trips only, checked on the test trips
     low, high = apply_margins(fit_margins(best_name, train_df), test_df["days_before"],
@@ -310,6 +332,7 @@ def train():
     best = fit_bundle(best_name, df)
     best["margins"] = fit_margins(best_name, df)
     best["range"] = [C.RANGE_LOW, C.RANGE_HIGH]
+    best["cv_mae"] = cv_mae.round(2).to_dict()
     MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(best, MODEL_FILE)
     print(f"\nSaved {best_name} to {MODEL_FILE}")
