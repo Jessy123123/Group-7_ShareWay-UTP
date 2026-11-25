@@ -289,6 +289,23 @@ function routePoints(code) {
   return [data.config.UTP, ...Object.values(data.config.ROUTES[code].stops)];
 }
 
+// Real road paths (src/fetch_route_paths.py, OSRM on OpenStreetMap roads).
+// Until they load, or if the file is missing, the map joins the stops with straight lines.
+let roadPaths = null;
+
+function routePath(code) {
+  return roadPaths?.routes?.[code]?.path ?? routePoints(code);
+}
+
+async function loadRoadPaths() {
+  try {
+    const res = await fetch("data/route_paths.json");
+    if (!res.ok) return;
+    roadPaths = await res.json();
+    renderRouteMap();
+  } catch { /* keep the straight lines */ }
+}
+
 function renderRoutes(ev) {
   // forecast passengers per route for the chosen break, run and snapshot
   const perRoute = {};
@@ -328,7 +345,7 @@ function renderRouteMap() {
     routeMap = Lf.map("route-map", { scrollWheelZoom: false, zoomSnap: 0.25 });
     Lf.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 12,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · roads: <a href="https://project-osrm.org">OSRM</a>',
     }).addTo(routeMap);
     routeLayer = Lf.layerGroup().addTo(routeMap);
   }
@@ -341,10 +358,11 @@ function renderRouteMap() {
   for (const code of order) {
     const on = ov.route === "all" || ov.route === code;
     const color = ROUTE_COLORS[code];
-    const line = Lf.polyline(routePoints(code), {
+    const line = Lf.polyline(routePath(code), {
       color, weight: on ? 4.5 : 3, opacity: on ? 0.95 : 0.25, className: ov.route === code ? "route-line" : "",
     }).addTo(routeLayer);
-    line.bindTooltip(`Route ${code} · ${data.config.ROUTES[code].name}`, { sticky: true });
+    const km = roadPaths?.routes?.[code]?.km;
+    line.bindTooltip(`Route ${code} · ${data.config.ROUTES[code].name}${km ? ` · about ${Math.round(km)} km by road` : ""}`, { sticky: true });
     line.on("click", () => setRoute(code));
     for (const [name, point] of Object.entries(data.config.ROUTES[code].stops)) {
       const m = Lf.circleMarker(point, { radius: on ? 6 : 4, color: "#fff", weight: 2, fillColor: color, fillOpacity: on ? 1 : 0.35 })
@@ -357,7 +375,7 @@ function renderRouteMap() {
     .bindTooltip("UTP", { permanent: true, direction: "left", offset: [-8, 0], className: "stop-label" })
     .addTo(routeLayer);
 
-  const shown = ov.route === "all" ? codes.flatMap(routePoints) : routePoints(ov.route);
+  const shown = ov.route === "all" ? codes.flatMap(routePath) : routePath(ov.route);
   routeMap.fitBounds(shown, { padding: [28, 28], maxZoom: 8 });
 }
 
@@ -798,6 +816,7 @@ async function init() {
   }
   L = createLogic(data);
   document.body.classList.remove("loading");
+  loadRoadPaths();
   if (typeof Chart === "undefined") {
     $("load-error").hidden = false;
     $("load-error").textContent = "Charts could not load (no internet connection to cdn.jsdelivr.net).";

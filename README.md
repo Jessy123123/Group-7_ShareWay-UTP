@@ -215,6 +215,7 @@ The other carpool students are **SIMULATED**, and bookings are only saved in the
 ### How the browser version relates to the Python code
 
 - Forecasts on the Overview page come from the trained model and are worked out ahead of time by `export_web.py`.
+- The route map draws each route along the real roads, saved in `web/data/route_paths.json` by `python src/fetch_route_paths.py` (OSRM on OpenStreetMap roads). Run it again only if a route or stop in `config.py` changes; the site never calls OSRM itself, and falls back to straight lines if the file is missing.
 - Forecasts on the Live bookings and What-if pages are worked out in the browser by the trained Gradient Boosting model itself: `export_web.py` writes its 100 trees into `dashboard.json` and `logic.js` walks them, so every page uses the same model and the browser's forecasts match Python's.
 - On the Live bookings page, bookings between the snapshot days are interpolated in a straight line.
 - `js/logic.js` is a JavaScript copy of `recommend()`, `match()`, `co2_saved()` and `predict_range()`. All the numbers come from `config.py` and `emissions.py` through `dashboard.json`, so **changing a number only needs `python src/export_web.py`**. Changing a _rule_ in `decide.py`, `carpool.py` or `emissions.py` also needs the same change in `logic.js`.
