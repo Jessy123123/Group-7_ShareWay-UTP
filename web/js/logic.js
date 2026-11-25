@@ -3,7 +3,7 @@
 //   recommend()      <- src/decide.py
 //   match()          <- src/carpool.py
 //   co2Saved()       <- src/emissions.py
-//   predictFinal()   <- src/train.py (compact forest exported by src/export_web.py)
+//   predictFinal()   <- src/train.py (the trained Gradient Boosting trees, exported by src/export_web.py)
 //   predictRange()   <- src/train.py predict_range() (forecast range / safety margin)
 //
 // Every number comes from data/dashboard.json, which src/export_web.py builds
@@ -56,7 +56,7 @@ export function createLogic(data) {
     return best;
   }
 
-  // train.py: predict_final(), using the compact forest
+  // train.py: predict_final(), walking the trained model's trees
   function predictTree(tree, x) {
     let node = 0;
     while (tree.f[node] !== -1) {
@@ -96,7 +96,9 @@ export function createLogic(data) {
     const x = W.features.map((f) =>
       f.startsWith("route_") ? Number(f === `route_${route}`) : values[f]);
     // apply_correction(): keep the correction in the range seen in training
-    const raw = W.trees.reduce((sum, t) => sum + predictTree(t, x), 0) / W.trees.length;
+    const sum = W.trees.reduce((s, t) => s + predictTree(t, x), 0);
+    // Gradient Boosting adds every tree to its starting value; a forest averages them
+    const raw = W.kind === "forest" ? sum / W.trees.length : W.base + sum;
     const correction = clamp(raw, [interp(W.correction_range, days, (r) => r[0]),
       interp(W.correction_range, days, (r) => r[1])]);
     const baseline = bookingsSoFar / interp(W.baseline_shares, days);   // predict_baseline()

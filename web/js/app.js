@@ -622,12 +622,12 @@ function renderForecast() {
     });
   });
 
-  const webMae = data.accuracy.overall["Web model (compact)"];
+  const webMae = data.accuracy.overall[data.web_model.name];
   const r = data.accuracy.range;
   $("r-note").textContent = `An estimate, not a guarantee: on trips it never saw, this forecast was off by about `
     + `${round(webMae, 1)} passengers on average. Planning for the high end of the range cut trips short of seats from `
     + `${r.short_pct_forecast}% to ${r.short_pct_high}%, for about ${round(r.extra_seats)} extra seats per trip. `
-    + "It uses a small Random Forest (a lighter copy of the trained model) so it can run in the browser.";
+    + `It is the trained ${data.web_model.name} model, running in your browser.`;
 }
 
 function renderAccuracy() {
@@ -637,7 +637,6 @@ function renderAccuracy() {
     "Linear Regression": { c: COLORS.amber, dash: [] },
     "Random Forest": { c: COLORS.green, dash: [] },
     "Gradient Boosting": { c: COLORS.primary, dash: [] },
-    "Web model (compact)": { c: COLORS.accent, dash: [5, 4] },
   };
   const names = Object.keys(acc.by_days_before.series);
   $("acc-sub").textContent = `Average error in passengers on ${acc.test_trips} simulated trips the models never saw `

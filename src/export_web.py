@@ -5,9 +5,10 @@ The web dashboard is a static site (deployed on Vercel), so it cannot run
 scikit-learn. Instead this script writes:
   - every simulated trip, with the REAL model's prediction at each snapshot
   - the model's error (MAE) at each days_before, from train.py's split
-  - a compact Random Forest (few, shallow trees) as plain arrays, so the
-    browser can forecast trips typed in by hand. Its error is measured on
-    the same test split and shown in the dashboard.
+  - the trained model itself (models/demand_model.joblib, Gradient Boosting)
+    as plain arrays of trees, so the browser runs the SAME model for trips
+    typed in by hand (What-if) or replayed day by day (Live). The browser's
+    forecasts match Python's exactly (see check_web_model.py notes in README).
   - the constants from config.py and emissions.py, so the JavaScript copies
     of recommend(), match() and co2_saved() use the same numbers
 
@@ -22,7 +23,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error
 
 # so "import config" and the other src/ modules work
@@ -34,8 +34,6 @@ import train as T  # noqa: E402
 
 OUT_FILE = C.ROOT / "web" / "data" / "dashboard.json"
 
-# Small enough to load quickly in a browser (a few hundred KB)
-COMPACT = {"n_estimators": 30, "max_depth": 10, "min_samples_leaf": 5}
 ROUTE_CODES = sorted(C.ROUTES)
 
 
@@ -50,17 +48,45 @@ def feature_names():
     return [f"route_{r}" for r in ROUTE_CODES] + [f for f in C.FEATURES if f != "route"]
 
 
-def fit_compact(df):
-    """Small Random Forest that learns the same correction to the baseline as
-    train.py's models. Returns a bundle like train.fit_bundle()."""
-    bundle, target = T.fit_correction(df)
-    model = RandomForestRegressor(**COMPACT, random_state=C.RANDOM_SEED, n_jobs=-1)
-    return {"model": model.fit(encode(df), target), **bundle}
+def boosting_to_json(model):
+    """HistGradientBoostingRegressor: one tree per boosting round. Prediction =
+    the model's starting value + the sum of every tree's leaf (the learning rate
+    is already applied to the leaves). Leaf nodes have feature -1. Go left when
+    x <= threshold. No feature is categorical or missing here."""
+    trees = []
+    for (predictor,) in model._predictors:
+        n = predictor.nodes
+        leaf = n["is_leaf"].astype(bool)
+        if n["is_categorical"].any():
+            raise ValueError("categorical splits are not supported by the browser model")
+        trees.append({
+            "f": np.where(leaf, -1, n["feature_idx"]).astype(int).tolist(),
+            "t": np.where(leaf, 0, n["num_threshold"]).tolist(),
+            "l": n["left"].astype(int).tolist(),
+            "r": n["right"].astype(int).tolist(),
+            "v": n["value"].tolist(),
+        })
+    return trees
 
 
-def predict_compact(compact, df):
-    df = T.clip_inputs(df)
-    return T.apply_correction(compact, df, compact["model"].predict(encode(df)))
+def web_model_trees(bundle):
+    """The saved model's trees for logic.js: Gradient Boosting (summed) or, if
+    train.py ever picks it, Random Forest (averaged)."""
+    pipe = bundle["model"]
+    names = [n.split("__", 1)[1] for n in pipe.named_steps["encode"].get_feature_names_out()]
+    if names != feature_names():
+        raise ValueError(f"model inputs {names} differ from what logic.js builds {feature_names()}")
+    est = pipe.named_steps["model"]
+    if hasattr(est, "_predictors"):
+        p = est.get_params()
+        return {"kind": "boosting", "base": float(np.ravel(est._baseline_prediction)[0]),
+                "params": {"max_iter": int(est.n_iter_), "learning_rate": p["learning_rate"],
+                           "max_leaf_nodes": p["max_leaf_nodes"]},
+                "trees": boosting_to_json(est)}
+    if hasattr(est, "estimators_"):
+        return {"kind": "forest", "base": 0.0,
+                "params": {"n_estimators": len(est.estimators_)}, "trees": forest_to_json(est)}
+    raise ValueError(f"{bundle['name']} can't be exported to the browser (no trees)")
 
 
 def forest_to_json(model):
@@ -107,10 +133,9 @@ def export_trips(df):
 
 
 def model_accuracy(df):
-    """MAE on unseen trips, same split as train.py, plus the compact web model."""
+    """MAE on unseen trips, same split as train.py."""
     train_df, test_df = T.split_by_trip(df)
     predictions = T.evaluate(train_df, test_df)
-    predictions["Web model (compact)"] = predict_compact(fit_compact(train_df), test_df)
     overall = {name: round(mean_absolute_error(test_df[C.TARGET], predictions[name]), 2)
                for name in predictions.columns}
     by_snapshot = T.mae_by_snapshot(test_df, predictions).round(2)
@@ -148,9 +173,8 @@ def export():
 
     print("Measuring model accuracy...")
     accuracy = model_accuracy(df)
-    print("Training compact web model on every trip...")
-    compact = fit_compact(df)
-    compact_margins = T.oof_margins(fit_compact, predict_compact, df)
+    bundle = T.load_model()   # the trained model, the same one the trips above use
+    web = web_model_trees(bundle)
 
     data = {
         "generated_from": "SIMULATED data (data/simulated/bookings.csv), not real student bookings",
@@ -167,17 +191,19 @@ def export():
         "breaks": breaks.to_dict(orient="records"),
         "accuracy": accuracy,
         "web_model": {
+            "name": bundle["name"],
+            "kind": web["kind"],          # boosting: base + sum of trees; forest: mean of trees
+            "base": web["base"],
             "features": feature_names(),
-            "params": COMPACT,
+            "params": web["params"],
             # The trees predict log((final + 1) / (baseline + 1)), see train.py
-            "baseline_shares": {d: round(v, 6) for d, v in compact["shares"].items()},
-            "correction_range": {d: [round(lo, 4), round(hi, 4)]
-                                 for d, (lo, hi) in compact["correction_range"].items()},
+            "baseline_shares": {d: v for d, v in bundle["shares"].items()},
+            "correction_range": {d: [lo, hi] for d, (lo, hi) in bundle["correction_range"].items()},
             "days_range": list(T.DAYS_RANGE),
             "offset_range": {str(h): list(r) for h, r in T.OFFSET_RANGE.items()},
             # forecast range: (forecast + 1) * exp(margin) - 1, see train.apply_margins()
-            "margins": {d: [round(lo, 5), round(hi, 5)] for d, (lo, hi) in compact_margins.items()},
-            "trees": forest_to_json(compact["model"]),
+            "margins": {d: [lo, hi] for d, (lo, hi) in bundle["margins"].items()},
+            "trees": web["trees"],
         },
         "trips": export_trips(df),
     }
